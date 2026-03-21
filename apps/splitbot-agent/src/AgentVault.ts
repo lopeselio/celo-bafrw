@@ -1,5 +1,9 @@
 import axios from 'axios';
 import * as LitJsSdk from '@lit-protocol/lit-node-client';
+import { LitActionResource } from '@lit-protocol/auth-helpers';
+import { LIT_ABILITY } from '@lit-protocol/constants';
+import { EthWalletProvider } from '@lit-protocol/lit-auth-client';
+import { ethers } from 'ethers';
 import { createThirdwebClient, sendTransaction, waitForReceipt, getContract } from "thirdweb";
 import { transfer } from "thirdweb/extensions/erc20";
 import { privateKeyToAccount } from "thirdweb/wallets";
@@ -25,10 +29,11 @@ export class AgentVault {
     private usePayments: boolean;
     private twebClient: any;
     private agentAccount: any;
-    private vaultDepositAddress = "0xYourAgentVaultEscrowAddressHere"; // Where fees go
-    private usdcTokenAddress = "0x01C5C0122039549AD1493B8220cABEdD739BC44E"; // Sepolia USDC
+    private vaultDepositAddress = "0xF768A55F53e366b20819657dE10Da4D7Fb977aB8"; // Actual TripEscrow
+    private usdcTokenAddress = "0x01C5C0122039549AD1493B8220cABEdD739BC44E"; // Celo Sepolia USDC
 
     private litNodeClient: any;
+    private sessionSigs: any;
   
     constructor(agentId: string) {
       this.agentId = agentId;
@@ -65,11 +70,86 @@ export class AgentVault {
         if (this.useRealLit) {
             console.log(`[Lit Protocol] Connecting to 'datil-dev' Lit network...`);
             this.litNodeClient = new LitJsSdk.LitNodeClientNodeJs({
-                // @ts-ignore
-                litNetwork: "datil-dev",
+                litNetwork: "datil-dev" as any, // Cast to any if types lag behind Naga releases
                 debug: false
             });
             await this.litNodeClient.connect();
+            
+            // Generate Session Sigs for the agent
+            await this.refreshSessionSigs();
+        }
+    }
+
+    /**
+     * Authenticates with the Lit Network using the Agent's Wallet
+     * and generates session signatures for subsequent operations.
+     */
+    async refreshSessionSigs() {
+        console.log(`[Lit Protocol] Generating Session Signatures for the Agent...`);
+        const privateKey = process.env.AGENT_WALLET_PRIVATE_KEY as string;
+        const wallet = new ethers.Wallet(privateKey);
+        
+        this.sessionSigs = await this.litNodeClient.getPkpSessionSigs({
+            chain: "celo",
+            publicKey: "0xPlaceholderPKPPublicKey", // We will update this when a PKP is minted
+            authMethods: [
+                {
+                    authMethodType: 1, // EthWallet
+                    accessToken: JSON.stringify({
+                        sig: await wallet.signMessage("Authenticate with Lit"),
+                        derivedVia: "web3.eth.personal.sign",
+                        signedMessage: "Authenticate with Lit",
+                        address: await wallet.getAddress(),
+                    }),
+                },
+            ],
+            resourceAbilityRequests: [
+                {
+                    resource: new LitActionResource("*"),
+                    ability: LIT_ABILITY.LitActionExecution,
+                },
+                {
+                    resource: new LitActionResource("*"), // Simplified for demo
+                    ability: LIT_ABILITY.AccessControlConditionDecryption,
+                },
+            ],
+        });
+    }
+
+    /**
+     * Executes the secure 'settleTrip.js' Lit Action within a TEE.
+     */
+    async executeSettlementAction(params: {
+        escrowAddress: string;
+        payee: string;
+        amount: string;
+        description: string;
+        ipfsId: string;
+    }) {
+        console.log(`\n[Lit Protocol] 🛡️ Executing Private Compute Settlement...`);
+        
+        if (!this.useRealLit) {
+            console.log(`[Lit Protocol] (Mocked) Settlement Action executed successfully.`);
+            return { success: true, txHash: "mock-tx-hash" };
+        }
+
+        try {
+            const results = await this.litNodeClient.executeJs({
+                ipfsId: params.ipfsId,
+                sessionSigs: this.sessionSigs,
+                jsParams: {
+                    escrowAddress: params.escrowAddress,
+                    payee: params.payee,
+                    amount: params.amount,
+                    description: params.description
+                }
+            });
+
+            console.log(`[Lit Protocol] ✅ Execution Complete. Result: ${JSON.stringify(results.response)}`);
+            return JSON.parse(results.response);
+        } catch (error: any) {
+            console.error(`[Lit Protocol] Execution failed: ${error.message}`);
+            throw error;
         }
     }
 
