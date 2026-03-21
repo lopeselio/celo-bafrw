@@ -25,6 +25,7 @@ contract TripEscrow is Ownable, Pausable {
     event Settled(address indexed to, uint256 amount, string description);
     event AgentUpdated(address oldAgent, address newAgent);
     event Refunded(address indexed user, uint256 amount);
+    event Slashed(address indexed user, uint256 amount, string reason);
 
     constructor(address _stablecoinAddress, address _agentWallet) Ownable(msg.sender) {
         stablecoin = IERC20(_stablecoinAddress);
@@ -36,9 +37,6 @@ contract TripEscrow is Ownable, Pausable {
         _;
     }
 
-    /**
-     * Users lock USDC into the group trip pool
-     */
     function deposit(uint256 amount) external whenNotPaused {
         require(stablecoin.transferFrom(msg.sender, address(this), amount), "USDC transfer failed");
         deposits[msg.sender] += amount;
@@ -46,15 +44,9 @@ contract TripEscrow is Ownable, Pausable {
         emit Deposited(msg.sender, amount);
     }
 
-    /**
-     * Agent calls this when someone says "Hey, I just paid $150 for the entire group's dinner"
-     * Edge case: If Bob owes Alice $50 but only deposited $10, the Agent tracks the $40 shortfall off-chain
-     * and only pulls $10 from Bob's mapping on-chain.
-     */
     function settleExpense(address payee, uint256 amount, string calldata description) external onlyAgentOrOwner whenNotPaused {
         require(totalPool >= amount, "Insufficient funds in the Trip Escrow pool");
         
-        // Anti-drain mechanism
         uint256 today = block.timestamp / 1 days;
         require(dailySettleAmount[today] + amount <= MAX_DAILY_SETTLE, "Daily Agent settle cap exceeded");
         dailySettleAmount[today] += amount;
@@ -65,10 +57,6 @@ contract TripEscrow is Ownable, Pausable {
         emit Settled(payee, amount, description);
     }
 
-    /**
-     * Only the Agent or the Owner can initiate a withdrawal BEFORE the trip is over
-     * This prevents bad actors from removing their money before paying for dinner.
-     */
     function refundUser(address user, uint256 amount) external onlyAgentOrOwner {
         require(deposits[user] >= amount, "User does not have enough deposit left");
         deposits[user] -= amount;
@@ -79,14 +67,20 @@ contract TripEscrow is Ownable, Pausable {
     }
 
     /**
-     * Allows organizing the replacement of a compromised agent
+     * Agent calls this to "slash" a user's deposit if they default on a group expense.
+     * The slashed amount stays in the totalPool to be redistributed to the victims.
      */
+    function slashUser(address user, uint256 amount, string calldata reason) external onlyAgentOrOwner {
+        require(deposits[user] >= amount, "User has insufficient deposit to slash");
+        deposits[user] -= amount;
+        emit Slashed(user, amount, reason);
+    }
+
     function updateAgent(address newAgent) external onlyOwner {
         emit AgentUpdated(splitBotAgent, newAgent);
         splitBotAgent = newAgent;
     }
 
-    // Emergency circuit breakers
     function pause() external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
 }
