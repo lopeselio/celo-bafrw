@@ -15,7 +15,9 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@lit-protocol/lit-node-client": "^7.4.0",
+    "@lit-protocol/contracts-sdk": "^8.0.0-alpha.0",
+    "@lit-protocol/lit-auth-client": "^8.0.0-alpha.0",
+    "@lit-protocol/lit-node-client": "^8.0.0-alpha.0",
     "axios": "^1.13.6",
     "dotenv": "^17.3.1",
     "ethers": "^5.8.0",
