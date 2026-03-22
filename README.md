@@ -44,11 +44,11 @@ The `TripEscrow.sol` contract manages group funds with integrated agent permissi
 | :--- | :--- | :--- |
 | **TripEscrow** | 🟢 Celo Sepolia | [`0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29`](https://sepolia.celoscan.io/address/0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29) |
 | **TripEscrow** | 🔵 Celo Mainnet | [`0xD43Bb3a001Ff360e28051d27363f8967E4a4C147`](https://celoscan.io/address/0xD43Bb3a001Ff360e28051d27363f8967E4a4C147) |
-| **Agent Identity** | 🆔 [AgentScan](https://agentscan.info/agent/222) | **Official Agent ID #222** (ERC-8004 Registry) |
+| **Agent Identity** | 🆔 [AgentScan](https://agentscan.info/agent/3549) | **Official Agent ID #3549** (ERC-8004 Mainnet) |
 
 ### 🆔 ERC-8004: Agent Trust & Reputation
 SplitBot follows the **ERC-8004** standard for decentralized AI agents. This protocol enables our agent to:
-- **Universal Discovery**: Using its portable NFT identity (**Agent #222**), other agents on Celo can discover and interact with SplitBot's endpoints.
+- **Universal Discovery**: Using its portable NFT identity (**Agent #3549**), other agents on Celo can discover and interact with SplitBot's endpoints.
 - **On-Chain Reputation**: Every successfully settled trip contributes to a verifiable "starred" reputation on the Celo blockchain, making the agent's reliability transparent to the entire ecosystem.
 - **Trustless Identity**: The agent's identity is cryptographically linked to its wallet, allowing for secure threshold signing via Lit Protocol.
 
@@ -56,6 +56,7 @@ SplitBot follows the **ERC-8004** standard for decentralized AI agents. This pro
 - **Autonomous Slashing**: The agent can seize portions of deposits if members fail to fulfill AI-calculated settlement requests.
 - **AI Settlement Oracle**: SplitBot acts as an off-chain oracle using secure signatures.
 - **Anti-Drain Caps**: 500 USDC daily settlement limit to prevent total loss in case of logic exploits.
+
 
 ---
 
