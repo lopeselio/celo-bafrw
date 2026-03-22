@@ -87,7 +87,7 @@ const erc20Abi = parseAbi(['function balanceOf(address) view returns (uint256)',
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const vault = new AgentVault('SplitBot_LIVE_DEMO');
+const vault = new AgentVault('SplitBot_FINAL_DEMO');
 
 let tripTransactions: any[] = [];
 let userRegistry: Record<string, string> = {}; 
@@ -185,29 +185,58 @@ bot.command('history', async (ctx) => {
 
     try {
         const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-        const analysisPrompt = `Transactions Log: ${JSON.stringify(tripTransactions)}. Give a very brief, friendly conversational summary of the current group balances. Who is owed money? Who still owes money? Ignore settled debts. Format with clean spacing and emojis. No extra intro/outro text.`;
+        const analysisPrompt = `Transactions Log: ${JSON.stringify(tripTransactions)}. Calculate the net balances taking ALL transactions and settlements into account. Then give a very brief, friendly conversational summary of the current group balances. Who is owed money? Who still owes money? If someone's net balance is perfectly settled (0 owed), state that they are all clear. Format with clean spacing and emojis. No extra intro/outro text.`;
         const result = await model.generateContent(analysisPrompt);
         
-        await ctx.telegram.editMessageText(
-            ctx.chat.id, 
-            statusMsg.message_id, 
-            undefined, 
-            summary + `\n\n📊 **Live Balance Tracker:**\n${result.response.text()}`, 
-            { parse_mode: 'Markdown' }
-        );
-    } catch(e) {
-        // Fallback if AI fails
+        try {
+            await ctx.telegram.editMessageText(
+                ctx.chat.id, 
+                statusMsg.message_id, 
+                undefined, 
+                summary + `\n\n📊 **Live Balance Tracker:**\n${result.response.text()}`, 
+                { parse_mode: 'Markdown' }
+            );
+        } catch (tgErr) {
+            // Telegram threw a markdown parser error
+            await ctx.telegram.editMessageText(
+                ctx.chat.id, 
+                statusMsg.message_id, 
+                undefined, 
+                summary + `\n\n📊 **Live Balance Tracker:**\n${result.response.text()}`
+            );
+        }
+    } catch(e: any) {
+        console.error("❌ History AI Error:", e.message);
+        // Fallback if AI fails completely
         await ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, undefined, summary, { parse_mode: 'Markdown' });
     }
 });
 
 bot.on(['text', 'voice'], async (ctx: any) => {
-    const text = ctx.message.text || '';
-    if (text.startsWith('/')) return;
-    
     try {
+        const text = ctx.message.text || '';
+        if (text.startsWith('/')) return;
+        
+        let promptContent: any[] = [];
+        
+        if (ctx.message.voice) {
+            await ctx.sendChatAction('record_voice');
+            const fileLink = await ctx.telegram.getFileLink(ctx.message.voice.file_id);
+            const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
+            
+            promptContent.push({
+                inlineData: {
+                    data: Buffer.from(response.data).toString("base64"),
+                    mimeType: "audio/ogg"
+                }
+            });
+            promptContent.push(`Extract expense from this audio. Return raw JSON: {"payer": "${ctx.from.first_name}", "amount": num, "description": "text"}. If no expense found, return NULL.`);
+        } else {
+            promptContent.push(`Extract expense from: "${text}". Return raw JSON: {"payer": "${ctx.from.first_name}", "amount": num, "description": "text"}. If no expense found, return NULL.`);
+        }
+        
         const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-        const res = await model.generateContent(`Extract expense from: "${text || 'Audio message'}". Return raw JSON: {"payer": "${ctx.from.first_name}", "amount": num, "description": "text"}. If no expense found, return NULL.`);
+        const res = await model.generateContent(promptContent);
         const content = res.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
         if (content === 'NULL') return;
         
@@ -215,10 +244,31 @@ bot.on(['text', 'voice'], async (ctx: any) => {
         if (!expense.amount) return;
         
         tripTransactions.push(expense);
-        const cid = await vault.saveState({ transactions: tripTransactions, registry: userRegistry });
-        console.log(`✅ [State Saved] IPFS Hash: ${cid}`);
-        await ctx.reply(`✅ Logged: ${expense.payer} paid ${expense.amount} for ${expense.description}.`);
-    } catch (e) {}
+        await vault.saveState({ transactions: tripTransactions, registry: userRegistry });
+        
+        const successText = `Got it! ${expense.payer} paid ${expense.amount} USDC for ${expense.description}. I've logged the expense securely.`;
+
+        if (ctx.message.voice && process.env.ELEVENLABS_API_KEY) {
+            try {
+                const elRes = await axios.post(
+                    `https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM`, // Rachel (Universal Voice ID)
+                    { text: successText, model_id: "eleven_monolingual_v1", voice_settings: { stability: 0.5, similarity_boost: 0.5 } },
+                    { 
+                        headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
+                        responseType: 'arraybuffer'
+                    }
+                );
+                await ctx.replyWithVoice({ source: Buffer.from(elRes.data) });
+            } catch (ttsErr: any) {
+                console.warn("⚠️ TTS Failed (Likely invalid Voice ID for this tier). Falling back to text.");
+                await ctx.reply(`✅ *${successText}*`, { parse_mode: 'Markdown' });
+            }
+        } else {
+            await ctx.reply(`✅ *${successText}*`, { parse_mode: 'Markdown' });
+        }
+    } catch (e: any) { 
+        console.error("❌ Agent Parsing Error:", e.message); 
+    }
 });
 
 async function boot() {
