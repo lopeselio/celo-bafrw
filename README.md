@@ -42,7 +42,7 @@ The `TripEscrow.sol` contract manages group funds with integrated agent permissi
 
 | Contract | Network | Address |
 | :--- | :--- | :--- |
-| **TripEscrow** | Celo Sepolia | `0xF768A55F53e366b20819657dE10Da4D7Fb977aB8` |
+| **TripEscrow** | Celo Sepolia | `0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29` |
 | **Agent Identity** | Celo Sepolia | **Agent ID #222** (ERC-8004) |
 
 ### Key Features:
