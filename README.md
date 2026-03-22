@@ -127,14 +127,60 @@ Imagine three friends—**Alice, Bob, and Charlie**—on a 3-day trip to Bali.
 
 ---
 
-## 🛠️ Tech Stack
+---
 
-- **Multimodal AI**: [Google Gemini 1.5 Flash](https://aistudio.google.com/) (Parses both text and raw voice memos).
-- **Voice Synthesis**: [ElevenLabs](https://elevenlabs.io/) (Agent replies with confirmational voice messages).
-- **Enclave Compute**: [Lit Protocol v8 (Naga)](https://litprotocol.com/) (TEE-based threshold signing).
-- **Mesh Networking**: [libp2p](https://libp2p.io/) (Agent-to-agent decentralized communication).
-- **On-Chain Identity**: [ERC-8004](https://erc8004.org/) (Official Celo Agent Registry).
-- **Payments & Storage**: Thirdweb x402 + Pinata IPFS.
+## ⚙️ Operational Modes
+
+SplitBot is designed to be flexible for different group trust levels. It supports two distinct settlement strategies:
+
+1.  **Direct P2P Settlement (Demo Mode)**: 
+    *   **Mechanism**: The Agent calculates the debts and generates a **MiniPay/Valora Deep Link** for each debtor. 
+    *   **Flow**: Users click the link in Telegram to initiate a direct peer-to-peer USDC transfer.
+    *   **Best for**: Casual groups with high social trust.
+
+2.  **Trustless Escrow Pooling (Hardcore Mode)**:
+    *   **Mechanism**: Users deposit USDC into the `TripEscrow.sol` contract upfront.
+    *   **Flow**: The Agent autonomously calls `settleExpense()` via **Lit Protocol TEE** to reimburse creditors from the pool.
+    *   **Best for**: Global hackathon teams or groups requiring algorithmic enforcement and **Slashing** protection.
+
+---
+
+## 🏆 Reputation & Credit Score
+
+SplitBot doesn't just log numbers; it builds a **Verifiable Reputation Score** for every user. 
+
+- **Settlement Health**: The Agent tracks the time-to-settle for every debt. Frequent on-time payers gain high reputation badges.
+- **Default Protection**: If a user is **Slashed** in Escrow Mode, their reputation score is permanently downgraded in the Agent's global memory.
+- **ERC-8004 Integration**: Future versions will allow users to query an Agent's reputation score before joining a group, creating a decentralized trust layer for the "Real World" economy.
+
+---
+
+## 🧠 Deep Dive: AgentVault Module
+
+**AgentVault** is the "Persistent Brain" of the SplitBot. It ensures the Agent has perfect memory across restarts while maintaining absolute privacy.
+
+### 🛠️ Tech Stack & Working:
+
+| Layer | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Privacy** | **Lit Protocol (TEE)** | Encrypts the Agent's state (Transactions/Registry) using Threshold Cryptography. Only the Agent's logic can see the plain text. |
+| **Storage** | **Pinata / IPFS** | Provides a decentralized, immutable home for the encrypted memory. |
+| **Economic Barrier** | **Thirdweb x402** | Implements a tiny micropayment (USDC) for every "Memory Save" to prevent spam and fund the Agent's operations. |
+| **AI Processing** | **Gemini 1.5 Flash** | Interrogates the recovered memory to provide conversational responses and dynamic balance tracking. |
+
+**The Workflow**: 
+1. `Bot Saves State` $\rightarrow$ 2. `Lit Action Encrypts String` $\rightarrow$ 3. `Thirdweb x402 Micropayment` $\rightarrow$ 4. `Pinata Pins JSON` $\rightarrow$ 5. `CID Returned`.
+
+---
+
+## 🛠️ Tech Stack Summary
+
+- **Multimodal AI**: [Google Gemini 1.5 Flash](https://aistudio.google.com/) (Parses text + raw audio).
+- **Voice Synthesis**: [ElevenLabs](https://elevenlabs.io/) (High-fidelity Agent vocal responses).
+- **Enclave Multi-Sig**: [Lit Protocol v8](https://litprotocol.com/) (TEE-based threshold signatures/encryption).
+- **Economic Logic**: [Thirdweb SDK](https://thirdweb.com/) (ERC-20 transfers & x402 payments).
+- **Blockchain Interface**: [Viem](https://viem.sh/) (Celo mainnet/testnet interactions).
+- **P2P Mesh**: [libp2p](https://libp2p.io/) (Decentralized Agent communication).
 
 ---
 
@@ -149,7 +195,10 @@ Located in `apps/splitbot-agent`.
 # Talk to the Agent
 "Hey SplitBot, I paid 80 for the rental car." (Text or Voice)
 
-# Settle (TEE-Authorized)
+# View History & Dynamic Balances
+/history
+
+# Settle
 /settle
 ```
 
@@ -158,3 +207,4 @@ Located in `apps/splitbot-agent`.
 ## 📖 Deployment Details
 - **Deployer**: `0xaAf16AD8a1258A98ed77A5129dc6A8813924Ad3C`
 - **Framework**: Foundry (Contracts) + TypeScript (Agent).
+- **Active Node**: Running on Celo Sepolia and Datil-Dev (Lit).
