@@ -181,11 +181,15 @@ bot.command('history', async (ctx) => {
     
     summary += `\n💰 **Actual Total Spent**: ${total.toFixed(2)} USDC`;
     
-    const statusMsg = await ctx.reply(summary + "\n\n📊 *Analyzing current balances...*", { parse_mode: 'Markdown' });
+    const statusMsg = await ctx.reply(summary + "\n\n🧠 *Agent calculates group reputation...*", { parse_mode: 'Markdown' });
 
     try {
         const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-        const analysisPrompt = `Transactions Log: ${JSON.stringify(tripTransactions)}. Calculate the net balances taking ALL transactions and settlements into account. Then give a very brief, friendly conversational summary of the current group balances. Who is owed money? Who still owes money? If someone's net balance is perfectly settled (0 owed), state that they are all clear. Format with clean spacing and emojis. No extra intro/outro text.`;
+        const analysisPrompt = `Transactions Log: ${JSON.stringify(tripTransactions)}. 
+        1. Calculate net balances for each person.
+        2. Assign a 'Reputation Rank' (e.g. Platinum Settler, Trustworthy, Solvent, or Debtor) based on their history.
+        3. Give a very brief, friendly conversational summary. Who is owed? Who owes? Who is 'All Clear'?
+        Format with emojis and clean spacing. No intro/outro.`;
         const result = await model.generateContent(analysisPrompt);
         
         try {
@@ -193,21 +197,19 @@ bot.command('history', async (ctx) => {
                 ctx.chat.id, 
                 statusMsg.message_id, 
                 undefined, 
-                summary + `\n\n📊 **Live Balance Tracker:**\n${result.response.text()}`, 
+                summary + `\n\n📊 **Agent Intelligence Summary:**\n${result.response.text()}`, 
                 { parse_mode: 'Markdown' }
             );
         } catch (tgErr) {
-            // Telegram threw a markdown parser error
             await ctx.telegram.editMessageText(
                 ctx.chat.id, 
                 statusMsg.message_id, 
                 undefined, 
-                summary + `\n\n📊 **Live Balance Tracker:**\n${result.response.text()}`
+                summary + `\n\n📊 **Agent Intelligence Summary:**\n${result.response.text()}`
             );
         }
     } catch(e: any) {
         console.error("❌ History AI Error:", e.message);
-        // Fallback if AI fails completely
         await ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, undefined, summary, { parse_mode: 'Markdown' });
     }
 });
