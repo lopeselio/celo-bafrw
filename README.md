@@ -52,6 +52,64 @@ The `TripEscrow.sol` contract manages group funds with integrated agent permissi
 
 ---
 
+### 📜 Smart Contract Architecture
+
+The `TripEscrow.sol` contract serves as the decentralized settlement layer for all group financial interactions. It acts as a non-custodial vault where funds are managed by the **SplitBot Agent's** verifiable logic.
+
+```mermaid
+graph TD
+    User((User))
+    Agent[SplitBot Agent]
+    Contract{{"TripEscrow.sol<br/>(Celo Sepolia)"}}
+    
+    subgraph "Main Functions"
+        User -->|deposit() / USDC| D[USDC Escrow Pool]
+        Agent -->|settleExpense()| S[Reimburse Payee]
+        Agent -->|slashUser()| SL[Penalize Defaulter]
+        Agent -->|refundUser()| RF[Return Funds]
+    end
+
+    subgraph "Edge Cases & Security Guards"
+        D -.-> E1{"Allowance == 0?"}
+        E1 -->|No| FAIL1[Revert: Transfer Failed]
+        
+        S -.-> E2{"TotalPool < Amount?"}
+        E2 -->|Yes| FAIL2[Revert: Insufficient Pool]
+        
+        S -.-> E3{"Amount > $500?"}
+        E3 -->|Yes| FAIL3[Revert: Daily Cap Exceeded]
+        
+        SL -.-> E4{"UserDeposit < Amount?"}
+        E4 -->|Yes| FAIL4[Revert: Insufficient Deposit]
+        
+        RF -.-> E5{"UserDeposit < Amount?"}
+        E5 -->|Yes| FAIL5[Revert: Insufficient Deposit]
+        
+        Contract -.-> E6{"isPaused?"}
+        E6 -->|Yes| FAIL6[Revert: Pausable]
+    end
+
+    style D fill:#f9f,stroke:#333
+    style FAIL1 fill:#ff9999,stroke:#b22
+    style FAIL2 fill:#ff9999,stroke:#b22
+    style FAIL3 fill:#ff9999,stroke:#b22
+    style FAIL4 fill:#ff9999,stroke:#b22
+    style FAIL5 fill:#ff9999,stroke:#b22
+    style FAIL6 fill:#ff9999,stroke:#b22
+```
+
+### High-Level Logic Overview:
+- **Trustless P2P Settlement**: Users deposit USDC into the vault. The agent uses AI to parse conversational debt and generates **Lit TEE session signatures** to authorize payouts directly to creditors, bypassing manual bank transfers.
+- **Autonomous Slashing (Game Theory Enforcement)**: If the group agrees on a debt but a member refuses to pay, the Agent can invoke `slashUser()`. This moves the offender's deposit into the collective pool for redistribution, programmatically enforcing social contracts.
+- **Safe-Stop Mechanics**:
+    - **Anti-Drain Cap**: A hardcoded limit prevents the Agent from settling more than **500 USDC per day**, protecting the group from logic bugs or unauthorized drenches.
+    - **Pausability**: The contract owner can instantly freeze all operations in case of a suspected emergency.
+- **ERC-8004 Identity**: The contract only accepts commands from the verified **SplitBot Agent Identity (#222)**, ensuring that only the decentralized node with the correct TEE credentials can move money.
+
+---
+
+---
+
 ## 🛠️ Tech Stack
 
 - **Multimodal AI**: [Google Gemini 1.5 Flash](https://aistudio.google.com/) (Parses both text and raw voice memos).
