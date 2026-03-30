@@ -9,6 +9,16 @@ import { transfer } from "thirdweb/extensions/erc20";
 import { privateKeyToAccount } from "thirdweb/wallets";
 import { defineChain } from "thirdweb";
 
+function litNetworkFromEnv(): 'naga-dev' | 'custom' {
+    const raw = (process.env.LIT_NETWORK || 'naga-dev').trim().toLowerCase();
+    if (raw === 'datil-dev' || raw === 'datil') {
+        console.warn('[Lit] LIT_NETWORK datil-dev is deprecated in v8; using naga-dev.');
+        return 'naga-dev';
+    }
+    if (raw === 'custom') return 'custom';
+    return 'naga-dev';
+}
+
 /**
  * AgentVault Core SDK
  * 
@@ -69,9 +79,10 @@ export class AgentVault {
 
         // Setup Lit Protocol
         if (this.useRealLit) {
-            console.log(`[Lit Protocol] Connecting to 'datil-dev' Lit network...`);
+            const litNetwork = litNetworkFromEnv();
+            console.log(`[Lit Protocol] Connecting to '${litNetwork}'...`);
             this.litNodeClient = new LitJsSdk.LitNodeClientNodeJs({
-                litNetwork: "datil-dev" as any, // Cast to any if types lag behind Naga releases
+                litNetwork,
                 debug: false
             });
             await this.litNodeClient.connect();

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import axios from 'axios';
 import { Telegraf } from 'telegraf';
-import express from 'express';
+import express, { type RequestHandler } from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -13,10 +13,15 @@ import { AgentVault } from './AgentVault.js';
 import { validateProdEnv } from './env.js';
 import {
     USDC_ADDRESS,
+    ESCROW_ADDRESS,
     RPC_URL,
     SETTLEMENT_MODE,
+    AGENT_VAULT_ID,
+    GEMINI_MODEL,
+    USDC_DECIMALS,
     getAgentAccount,
 } from './config.js';
+import { generateContentWithRetry } from './gemini.js';
 import { executeEscrowSettlement, type SettlementDebt } from './settlement.js';
 import { submitReputationAfterSettle, submitValidationRequest } from './erc8004.js';
 import { archiveJsonToFilecoinBacked } from './filecoinArchive.js';
@@ -27,10 +32,16 @@ import type { Libp2p } from 'libp2p';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+/** Escape user/content for Telegram <code>parse_mode: HTML</code>. */
+function tgHtml(text: string): string {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
 const app = express();
-app.use(cors());
+// cors@2 types target Express 4; Express 5 Response differs — bridge via unknown.
+app.use(cors() as unknown as RequestHandler);
 app.use(express.json());
 app.use(express.static(join(__dirname, '../public')));
 
@@ -58,11 +69,10 @@ app.post('/api/payment-success', async (req: express.Request, res: express.Respo
                 { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
             );
 
-            const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
             const prompt = `Transactions Log: ${JSON.stringify(
                 tripTransactions
             )}. Calculate the net settlements remaining to balance the trip. Return ONLY A RAW JSON ARRAY. Format: [{"debtor": "name", "creditor": "name", "amount": number}]`;
-            const result = await model.generateContent(prompt);
+            const result = await generateContentWithRetry(genAI, prompt);
             const rawText = result.response.text();
 
             const jsonMatch = rawText.match(/\[[\s\S]*\]/);
@@ -105,10 +115,26 @@ const erc20Abi = parseAbi([
     'function balanceOf(address) view returns (uint256)',
     'event Transfer(address indexed from, address indexed to, uint256 value)',
 ]);
+const escrowPoolAbi = parseAbi(['function totalPool() view returns (uint256)']);
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!);
+
+bot.catch((err: unknown) => {
+    const e = err as { response?: { error_code?: number; description?: string } };
+    if (e?.response?.error_code === 409) {
+        console.error(
+            '\n[Telegram] 409 Conflict: another client is already using getUpdates with this bot token.\n' +
+                '  • Stop other terminals running the bot (npm start / dev / start:no-lit).\n' +
+                '  • Stop deployed workers or tunnels using the same TELEGRAM_BOT_TOKEN.\n' +
+                '  • Or create a second bot via @BotFather for parallel local testing.\n',
+        );
+        process.exit(1);
+    }
+    console.error('[Telegram]', err);
+});
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const vault = new AgentVault('SplitBot_FINAL_DEMO');
+const vault = new AgentVault(AGENT_VAULT_ID);
 
 let tripTransactions: any[] = [];
 let userRegistry: Record<string, string> = {};
@@ -130,11 +156,17 @@ async function getBalances(address: string) {
 }
 
 bot.command('start', (ctx) => {
+    // Legacy Markdown breaks on underscores (e.g. SETTLEMENT_MODE → italic). Use HTML.
     ctx.reply(
-        `🤖 **Celo SplitBot v2 Ready!**\n\n` +
-            `Settlement: **${SETTLEMENT_MODE}** (set SETTLEMENT_MODE=escrow|minipay)\n\n` +
-            `Commands:\n/register <wallet> - Link your Celo ID\n/agent - Check Agent Balance\n/history - View logged expenses\n/settle - Finalize Trip Expenses`,
-        { parse_mode: 'Markdown' }
+        `🤖 <b>Celo SplitBot v2 Ready!</b>\n\n` +
+            `Settlement: <b>${tgHtml(SETTLEMENT_MODE)}</b> (env <code>SETTLEMENT_MODE</code>: <code>escrow</code> or <code>minipay</code>)\n\n` +
+            `<b>Commands:</b>\n` +
+            `/register &lt;wallet&gt; - Link your Celo ID\n` +
+            `/agent - Check Agent Balance\n` +
+            `/pool - USDC in TripEscrow contract\n` +
+            `/history - View logged expenses\n` +
+            `/settle - Finalize Trip Expenses`,
+        { parse_mode: 'HTML' },
     );
 });
 
@@ -145,6 +177,31 @@ bot.command('agent', async (ctx) => {
         `🤖 **Agent Status**\nWallet: \`${addr}\`\nUSDC: ${bal.usdc}\nCELO: ${bal.celo}\nMode: ${SETTLEMENT_MODE}`,
         { parse_mode: 'Markdown' }
     );
+});
+
+bot.command('pool', async (ctx) => {
+    try {
+        const poolWei = await client.readContract({
+            address: ESCROW_ADDRESS,
+            abi: escrowPoolAbi,
+            functionName: 'totalPool',
+        });
+        const usdc = formatUnits(poolWei, USDC_DECIMALS);
+        const note =
+            SETTLEMENT_MODE === 'escrow'
+                ? 'In <b>escrow</b> mode, <code>/settle</code> pays creditors from this pool (needs enough USDC here).'
+                : 'Mode is <b>minipay</b> (P2P transfers). Pool is still the on-chain TripEscrow balance if you fund it for demos.';
+        await ctx.reply(
+            `🏦 <b>TripEscrow pool</b>\n\n` +
+                `<b>${tgHtml(usdc)}</b> USDC\n\n` +
+                `Contract: <code>${tgHtml(ESCROW_ADDRESS)}</code>\n\n` +
+                note,
+            { parse_mode: 'HTML' }
+        );
+    } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await ctx.reply(`❌ Could not read pool: ${msg}`);
+    }
 });
 
 bot.command('register', async (ctx) => {
@@ -164,7 +221,6 @@ bot.command('register', async (ctx) => {
 
 /** Plan → verify → execute: AI proposes settlement vector, then escrow or MiniPay paths. */
 bot.command('settle', async (ctx) => {
-    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
     if (tripTransactions.length === 0)
         return ctx.reply('ℹ️ No expenses logged yet. Send a message like \'I paid $50 for dinner\' to start!');
     await ctx.reply('🧮 Calculating final settlements with AI (plan → verify → execute)...');
@@ -177,7 +233,7 @@ bot.command('settle', async (ctx) => {
     Format: [{"debtor": "name", "creditor": "name", "amount": number}]`;
 
     try {
-        const result = await model.generateContent(prompt);
+        const result = await generateContentWithRetry(genAI, prompt);
         const rawText = result.response.text();
         console.log(`🤖 [AI Settlement] Raw Response: ${rawText}`);
 
@@ -260,8 +316,15 @@ bot.command('settle', async (ctx) => {
             }
         }
     } catch (e: any) {
-        console.error(`❌ AI Settlement Error: ${e.message}`);
-        ctx.reply('❌ AI calculation failed. Please try again.');
+        const msg = e?.message || String(e);
+        console.error(`❌ AI Settlement Error: ${msg}`);
+        if (/503|429|high demand|UNAVAILABLE/i.test(msg)) {
+            await ctx.reply(
+                '⏳ Google AI is busy (503). Wait ~30s and run /settle again — the bot will try backup models automatically.'
+            );
+        } else {
+            await ctx.reply('❌ AI calculation failed. Please try again.');
+        }
     }
 });
 
@@ -287,13 +350,12 @@ bot.command('history', async (ctx) => {
     });
 
     try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
         const analysisPrompt = `Transactions Log: ${JSON.stringify(tripTransactions)}. 
         1. Calculate net balances for each person.
         2. Assign a 'Reputation Rank' (e.g. Platinum Settler, Trustworthy, Solvent, or Debtor) based on their history.
         3. Give a very brief, friendly conversational summary. Who is owed? Who owes? Who is 'All Clear'?
         Format with emojis and clean spacing. No intro/outro.`;
-        const result = await model.generateContent(analysisPrompt);
+        const result = await generateContentWithRetry(genAI, analysisPrompt);
 
         try {
             await ctx.telegram.editMessageText(
@@ -346,8 +408,7 @@ bot.on(['text', 'voice'], async (ctx: any) => {
             );
         }
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-        const res = await model.generateContent(promptContent);
+        const res = await generateContentWithRetry(genAI, promptContent);
         const content = res.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
         if (content === 'NULL') return;
 
@@ -384,13 +445,21 @@ bot.on(['text', 'voice'], async (ctx: any) => {
             await ctx.reply(`✅ *${successText}*`, { parse_mode: 'Markdown' });
         }
     } catch (e: any) {
-        console.error('❌ Agent Parsing Error:', e.message);
+        const msg = e?.message || String(e);
+        console.error('❌ Agent Parsing Error:', msg);
+        if (/503|429|high demand|UNAVAILABLE/i.test(msg)) {
+            await ctx.reply(
+                '⏳ Google AI is temporarily busy. Please wait a few seconds and send your expense again.'
+            );
+        }
     }
 });
 
 async function boot() {
     validateProdEnv();
+    console.log(`[Gemini] model=${GEMINI_MODEL} (override with GEMINI_MODEL in .env)`);
     await vault.setup();
+    await vault.logPersistenceDiagnostics();
 
     const lastState = await vault.getLatestState();
     if (lastState && !('status' in lastState && (lastState as any).status === 'error')) {
@@ -409,7 +478,9 @@ async function boot() {
         });
     }
 
-    bot.launch();
+    // Polling requires no active webhook and no second poller (same token).
+    await bot.telegram.deleteWebhook({ drop_pending_updates: false });
+    await bot.launch();
     console.log('🌟 SplitBot ONLINE');
 }
 boot().catch(console.error);

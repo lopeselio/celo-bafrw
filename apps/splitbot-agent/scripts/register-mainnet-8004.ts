@@ -22,7 +22,9 @@ async function registerAgentMainnet() {
     ];
 
     const registry = new ethers.Contract(IDENTITY_REGISTRY_ADDRESS, ABI, wallet);
-    const agentMetadataURI = "ipfs://QmSplitBotGenAIIdentityDefinition001";
+    /** Mainnet: pin an agent.json with chainId 42220 / mainnet contracts, then set AGENT_REGISTRATION_URI_MAINNET. */
+    const agentMetadataURI =
+        process.env.AGENT_REGISTRATION_URI_MAINNET || 'ipfs://QmSplitBotGenAIIdentityDefinition001';
 
     try {
         console.log(`\n⏳ Minting ERC-721 Agent Identity on Mainnet...`);

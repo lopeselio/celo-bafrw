@@ -8,7 +8,13 @@ import { createThirdwebClient, sendTransaction, getContract } from 'thirdweb';
 import { transfer } from 'thirdweb/extensions/erc20';
 import { privateKeyToAccount as twPkToAccount } from 'thirdweb/wallets';
 import { defineChain } from 'thirdweb';
-import { ESCROW_ADDRESS } from './config.js';
+import { ESCROW_ADDRESS, getLitNetwork } from './config.js';
+import { runChipotleLitAction } from './chipotleClient.js';
+import {
+    getStorachaClient,
+    AGENT_MEMORY_FILENAME,
+    storachaAgentMemoryUrl,
+} from './filecoinArchive.js';
 
 export class AgentVault {
     private agentId: string;
@@ -39,6 +45,27 @@ export class AgentVault {
         console.log(`[AgentVault] Initialized Persistent Memory for Agent: ${this.agentId}`);
     }
 
+    /** After `setup()`, logs whether Storacha env is present and the client can start (Pinata remains fallback). */
+    async logPersistenceDiagnostics(): Promise<void> {
+        const has =
+            !!(process.env.STORACHA_AGENT_KEY?.trim() && process.env.STORACHA_PROOF?.trim());
+        if (!has) {
+            console.log(
+                '📦 [AgentVault] Storacha: not configured — set STORACHA_AGENT_KEY + STORACHA_PROOF for sponsor path. Memory load/save uses Pinata when those keys exist.'
+            );
+            return;
+        }
+        try {
+            await getStorachaClient();
+            console.log(
+                '📦 [AgentVault] Storacha: client OK — uploads go here first; latest load uses Storacha when a matching memory blob exists, else Pinata.'
+            );
+        } catch (e: unknown) {
+            const m = e instanceof Error ? e.message : String(e);
+            console.warn(`📦 [AgentVault] Storacha: failed to start — ${m}`);
+        }
+    }
+
     async setup() {
         if (this.usePayments) {
             this.twebClient = createThirdwebClient({
@@ -48,13 +75,21 @@ export class AgentVault {
             this.agentAccount = twPkToAccount({ client: this.twebClient, privateKey });
         }
         if (this.useRealLit) {
-            console.log('🔒 [Lit] Connecting to datil-dev (Lit Protocol v8 / Naga-compatible stack)...');
-            this.litNodeClient = new LitJsSdk.LitNodeClientNodeJs({
-                litNetwork: 'datil-dev' as any,
-                debug: false,
-            });
-            await this.litNodeClient.connect();
-            await this.refreshSessionSigs();
+            const litNetwork = getLitNetwork();
+            console.log(`🔒 [Lit] Connecting to ${litNetwork} (@lit-protocol v8 / Naga)...`);
+            try {
+                this.litNodeClient = new LitJsSdk.LitNodeClientNodeJs({
+                    litNetwork,
+                    debug: false,
+                });
+                await this.litNodeClient.connect();
+                await this.refreshSessionSigs();
+            } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : String(e);
+                throw new Error(
+                    `[Lit] Required (ENABLE_LIT=true) but connection failed: ${msg}. Fix network/VPN/firewall, confirm Lit services, or set ENABLE_LIT=false only for local escrow-only runs.`,
+                );
+            }
         }
     }
 
@@ -107,16 +142,29 @@ export class AgentVault {
         if (!this.useRealLit) {
             return { success: true, txHash: 'lit-disabled-mock' };
         }
+        const chipotleKey = process.env.LIT_CHIPOTLE_API_KEY;
+        const jsParams: Record<string, unknown> = {
+            escrowAddress: params.escrowAddress,
+            payee: params.payee,
+            amount: params.amount,
+            description: params.description,
+        };
+        const pkpId = process.env.LIT_CHIPOTLE_PKP_ID;
+        if (pkpId) jsParams.pkpId = pkpId;
+
         try {
+            if (chipotleKey) {
+                const out = await runChipotleLitAction(chipotleKey, {
+                    code: params.ipfsId,
+                    js_params: jsParams,
+                });
+                const r = out.response;
+                return typeof r === 'string' ? JSON.parse(r) : r;
+            }
             const results = await this.litNodeClient.executeJs({
                 ipfsId: params.ipfsId,
                 sessionSigs: this.sessionSigs,
-                jsParams: {
-                    escrowAddress: params.escrowAddress,
-                    payee: params.payee,
-                    amount: params.amount,
-                    description: params.description,
-                },
+                jsParams: jsParams,
             });
             return JSON.parse(results.response as string);
         } catch (error: any) {
@@ -186,10 +234,31 @@ export class AgentVault {
             dataToEncryptHash = 'mockHash';
         }
 
+        const memoryBody = {
+            encryptedData: encryptedPayload,
+            litHash: dataToEncryptHash,
+            _splitbot: { agentId: this.agentId, savedAt: Date.now() },
+        };
+
+        try {
+            const client = await getStorachaClient();
+            if (client) {
+                const json = JSON.stringify(memoryBody);
+                const file = new File([json], AGENT_MEMORY_FILENAME, { type: 'application/json' });
+                const root = await client.uploadFile(file);
+                const cid = root.toString();
+                console.log(`🌐 [Storacha] State uploaded. CID: ${cid}`);
+                return cid;
+            }
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.warn(`⚠️ [Storacha] Upload failed, falling back to Pinata: ${msg}`);
+        }
+
         if (this.pinataApiKey && this.pinataSecretApiKey) {
             const payload = {
                 pinataMetadata: { name: `AgentMemory_${this.agentId}_${Date.now()}` },
-                pinataContent: { encryptedData: encryptedPayload, litHash: dataToEncryptHash },
+                pinataContent: memoryBody,
             };
             const res = await axios.post(`https://api.pinata.cloud/pinning/pinJSONToIPFS`, payload, {
                 headers: {
@@ -197,51 +266,132 @@ export class AgentVault {
                     pinata_secret_api_key: this.pinataSecretApiKey,
                 },
             });
-            console.log(`🌐 [IPFS] State Pinned. CID: ${res.data.IpfsHash}`);
+            console.log(`🌐 [Pinata] State pinned. CID: ${res.data.IpfsHash}`);
             return res.data.IpfsHash;
         }
         return `QmMock${Date.now()}`;
     }
 
-    async loadState(cid: string): Promise<Record<string, any>> {
-        if (!this.pinataApiKey) return { status: 'no-pinata', data: {} };
+    private ipfsGatewayBase(): string {
+        const g = process.env.PINATA_GATEWAY_URL?.trim();
+        return (g || 'https://gateway.pinata.cloud/ipfs').replace(/\/$/, '');
+    }
 
-        try {
-            const gatewayUrl =
-                process.env.PINATA_GATEWAY_URL || 'https://gateway.pinata.cloud/ipfs';
-            const res = await axios.get(`${gatewayUrl}/${cid}`);
-            const { encryptedData, litHash } = res.data;
-
-            if (this.useRealLit && this.litNodeClient && litHash && litHash !== 'mockHash') {
-                console.log('🔓 [Lit] Decrypting state...');
-                try {
-                    // @ts-expect-error decrypt
-                    const decryptedString = await LitJsSdk.decryptToString(
-                        {
-                            accessControlConditions: this.getLitAccessConditions(),
-                            ciphertext: encryptedData,
-                            dataToEncryptHash: litHash,
-                            sessionSigs: this.sessionSigs || {},
-                            chain: 'celo',
-                        },
-                        this.litNodeClient
-                    );
-                    return JSON.parse(decryptedString);
-                } catch (decErr: any) {
-                    console.warn(`[Lit] decrypt failed ${decErr.message}; trying base64`);
+    /** Fetch encrypted memory JSON from Storacha / public IPFS gateways (Pinata-pinned JSON is at CID root). */
+    private async fetchMemoryJsonFromGateways(cid: string): Promise<{
+        encryptedData: string;
+        litHash: string;
+        _splitbot?: { agentId: string; savedAt?: number };
+    }> {
+        // Prefer w3s first: works for both Pinata (JSON at CID root) and Storacha file roots; subdomain + filename is a fallback.
+        const urls = [
+            `https://w3s.link/ipfs/${cid}`,
+            `${this.ipfsGatewayBase()}/${cid}`,
+            storachaAgentMemoryUrl(cid),
+        ];
+        let lastErr = '';
+        for (const url of urls) {
+            try {
+                const res = await axios.get(url, { timeout: 25000, validateStatus: () => true });
+                if (res.status !== 200) {
+                    lastErr = `${url}: HTTP ${res.status}`;
+                    continue;
                 }
+                const d = res.data;
+                if (d && typeof d === 'object' && typeof d.encryptedData === 'string') {
+                    return d;
+                }
+                lastErr = 'response is not agent memory JSON';
+                break;
+            } catch (e: unknown) {
+                lastErr = e instanceof Error ? e.message : String(e);
             }
+        }
+        throw new Error(lastErr || 'fetch failed for all gateways');
+    }
 
-            const decrypted = Buffer.from(encryptedData, 'base64').toString();
-            return JSON.parse(decrypted);
-        } catch (e: any) {
-            console.error(`❌ [AgentVault] Load failed: ${e.message}`);
-            return { status: 'error', error: e.message };
+    private async decryptMemoryPayload(encryptedData: string, litHash: string): Promise<Record<string, any>> {
+        if (this.useRealLit && this.litNodeClient && litHash && litHash !== 'mockHash') {
+            console.log('🔓 [Lit] Decrypting state...');
+            try {
+                // @ts-expect-error decrypt
+                const decryptedString = await LitJsSdk.decryptToString(
+                    {
+                        accessControlConditions: this.getLitAccessConditions(),
+                        ciphertext: encryptedData,
+                        dataToEncryptHash: litHash,
+                        sessionSigs: this.sessionSigs || {},
+                        chain: 'celo',
+                    },
+                    this.litNodeClient
+                );
+                return JSON.parse(decryptedString);
+            } catch (decErr: unknown) {
+                const m = decErr instanceof Error ? decErr.message : String(decErr);
+                console.warn(`[Lit] decrypt failed ${m}; trying base64`);
+            }
+        }
+        const decrypted = Buffer.from(encryptedData, 'base64').toString();
+        return JSON.parse(decrypted);
+    }
+
+    async loadState(cid: string): Promise<Record<string, any>> {
+        try {
+            const { encryptedData, litHash } = await this.fetchMemoryJsonFromGateways(cid);
+            return await this.decryptMemoryPayload(encryptedData, litHash);
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error(`❌ [AgentVault] Load failed: ${msg}`);
+            return { status: 'error', error: msg };
         }
     }
 
     async getLatestState(): Promise<Record<string, any> | null> {
-        if (!this.pinataApiKey || !this.pinataSecretApiKey) return null;
+        let storachaTried = false;
+        let storachaUploadCount = 0;
+        try {
+            const client = await getStorachaClient();
+            if (client) {
+                storachaTried = true;
+                const page = await client.capability.upload.list({ size: 100 });
+                const rows = [...(page.results ?? [])].sort(
+                    (a, b) =>
+                        new Date(b.insertedAt).getTime() - new Date(a.insertedAt).getTime()
+                );
+                storachaUploadCount = rows.length;
+                for (const item of rows) {
+                    const cid = item.root.toString();
+                    try {
+                        const raw = await this.fetchMemoryJsonFromGateways(cid);
+                        if (raw._splitbot?.agentId === this.agentId) {
+                            console.log(`📡 [AgentVault] Found persistent memory (Storacha) at CID: ${cid}`);
+                            return await this.decryptMemoryPayload(raw.encryptedData, raw.litHash);
+                        }
+                    } catch {
+                        /* not this upload or fetch error */
+                    }
+                }
+                if (storachaUploadCount === 0) {
+                    console.log(
+                        '📦 [AgentVault] Storacha is configured but this space has no uploads yet — loading latest from Pinata if present (trigger any save to create a Storacha memory blob).'
+                    );
+                } else {
+                    console.log(
+                        `📦 [AgentVault] Storacha has ${storachaUploadCount} upload(s) for this space, but none are agent memory for "${this.agentId}" (e.g. another AGENT_VAULT_ID or settlement archive) — checking Pinata…`
+                    );
+                }
+            }
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.warn(`⚠️ [AgentVault] Storacha latest state failed: ${msg}`);
+        }
+
+        if (!this.pinataApiKey || !this.pinataSecretApiKey) {
+            console.log(
+                `📦 [AgentVault] No ledger snapshot for "${this.agentId}" — starting empty (no Pinata API keys to fall back).`
+            );
+            return null;
+        }
         try {
             const res = await axios.get(
                 `https://api.pinata.cloud/data/pinList?status=pinned&metadata[name]=AgentMemory_${this.agentId}_&pageLimit=1&sort=DESC`,
@@ -254,12 +404,18 @@ export class AgentVault {
             );
             if (res.data.rows?.length > 0) {
                 const latest = res.data.rows[0];
-                console.log(`📡 [AgentVault] Found persistent memory at CID: ${latest.ipfs_pin_hash}`);
-                return await this.loadState(latest.ipfs_pin_hash);
+                const h = latest.ipfs_pin_hash as string;
+                console.log(
+                    `📡 [AgentVault] Found persistent memory (Pinata) at CID: ${h}${storachaTried ? ' — Storacha did not have a newer matching blob; Qm* = Pinata JSON pin.' : ''}`
+                );
+                return await this.loadState(h);
             }
         } catch {
             console.warn('⚠️ [AgentVault] Could not fetch latest state from Pinata.');
         }
+        console.log(
+            `📦 [AgentVault] No ledger snapshot for "${this.agentId}" — starting empty (expected with a new AGENT_VAULT_ID until you /register and log expenses or run storacha:ping).`
+        );
         return null;
     }
 }

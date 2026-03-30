@@ -2,6 +2,9 @@ import 'dotenv/config';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PINATA_API_KEY = process.env.PINATA_API_KEY;
 const PINATA_SECRET_API_KEY = process.env.PINATA_SECRET_API_KEY;
@@ -33,7 +36,7 @@ async function pinLitAction() {
         const cid = res.data.IpfsHash;
         console.log(`\n✅ LIT ACTION SECURED!`);
         console.log(`CID: ${cid}`);
-        console.log(`\nNext: Replace "QmPlaceholderLitActionCID" in bot.ts with this CID.`);
+        console.log(`\nNext: set LIT_SETTLEMENT_IPFS_CID=${cid} in apps/splitbot-agent/.env`);
         
         return cid;
     } catch (error: any) {

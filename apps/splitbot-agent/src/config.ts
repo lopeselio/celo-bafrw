@@ -30,6 +30,55 @@ export function getFeedbackAccount() {
   return privateKeyToAccount(pk as `0x${string}`);
 }
 
-export const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE || 'minipay') as 'minipay' | 'escrow';
+/** For `fund-escrow` script: dedicated treasury wallet, else same as agent. */
+export function getEscrowFunderAccount() {
+  const pk = process.env.ESCROW_FUNDER_PRIVATE_KEY;
+  if (pk) return privateKeyToAccount(pk as `0x${string}`);
+  return getAgentAccount();
+}
+
+export const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE || 'escrow') as 'minipay' | 'escrow';
+
+/**
+ * Namespaces AgentVault blobs in Storacha/Pinata (`_splitbot.agentId`). Use a new value for a clean demo
+ * so you do not load legacy `tripTransactions` / `userRegistry` from an old id.
+ */
+export const AGENT_VAULT_ID = process.env.AGENT_VAULT_ID?.trim() || 'splitbot-demo';
+
+/**
+ * Gemini model id (see Google AI Studio). Aliases like `gemini-flash-latest` often 503 under load — we normalize those.
+ * Examples: gemini-2.0-flash, gemini-1.5-flash
+ */
+function normalizeGeminiModel(raw: string): string {
+  const r = raw.trim();
+  if (r === 'gemini-flash-latest' || r === 'gemini-pro-latest') {
+    console.warn(
+      `[config] GEMINI_MODEL "${r}" is unstable; using gemini-1.5-flash. Set GEMINI_MODEL=gemini-1.5-flash or gemini-2.0-flash.`,
+    );
+    return 'gemini-1.5-flash';
+  }
+  return r;
+}
+
+export const GEMINI_MODEL = normalizeGeminiModel(
+  process.env.GEMINI_MODEL?.trim() || 'gemini-1.5-flash',
+);
 
 export const LIT_SETTLEMENT_IPFS_CID = process.env.LIT_SETTLEMENT_IPFS_CID || '';
+
+/** Lit v8 / Naga: only `naga-dev` and `custom` are valid. Legacy `datil-dev` maps to `naga-dev`. */
+export type LitNetworkName = 'naga-dev' | 'custom';
+
+export function getLitNetwork(): LitNetworkName {
+  const raw = (process.env.LIT_NETWORK || 'naga-dev').trim().toLowerCase();
+  if (raw === 'datil-dev' || raw === 'datil') {
+    console.warn(
+      '[config] LIT_NETWORK datil-dev is deprecated in @lit-protocol v8; using naga-dev. Set LIT_NETWORK=naga-dev.',
+    );
+    return 'naga-dev';
+  }
+  if (raw === 'custom') return 'custom';
+  if (raw === 'naga-dev' || raw === '') return 'naga-dev';
+  console.warn(`[config] Unknown LIT_NETWORK="${raw}"; using naga-dev`);
+  return 'naga-dev';
+}
