@@ -16,7 +16,8 @@ const go = async () => {
   // 1. Verify the state (Optional: Fetch IPFS ledger here to verify amount vs history)
   // For this prototype, we'll demonstrate the conditional signing.
   // We check if the amount is within a 'safe' range for an automated agent action.
-  const MAX_SAFE_SETTLE = ethers.utils.parseUnits("500", 18); // 500 USDC
+  // Amount from the bot matches TripEscrow / USDC (6 decimals), same as settlement.ts
+  const MAX_SAFE_SETTLE = ethers.utils.parseUnits("500", 6); // 500 USDC
   
   if (ethers.BigNumber.from(amount).gt(MAX_SAFE_SETTLE)) {
     throw new Error("Lit Action: Security limit exceeded. Manual organizer approval required.");
@@ -38,7 +39,7 @@ const go = async () => {
   const sigShare = await Lit.Actions.signEthers({
     toAddress: escrowAddress,
     data: txData,
-    chainId: 44787, // Celo Alfajores Testnet (or 42220 for Mainnet)
+    chainId: 11142220, // Celo Sepolia (must match apps/splitbot-agent settlement + AgentVault chain)
     requestSerializer: true
   });
 

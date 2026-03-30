@@ -1,6 +1,6 @@
 /**
- * Stand-in for fhEVM client: commit-split vector hash for audit without deploying fhEVM in CI.
- * Production: replace with Zama relayer encrypt + contract call per https://docs.zama.org/protocol
+ * Local hash stand-in for split payloads (debug / logging). On Ethereum Sepolia production:
+ * use Zama relayer + `ConfidentialSplitLedger.addEncryptedNet` per https://docs.zama.org/protocol
  */
 import { createHash } from 'crypto';
 
