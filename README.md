@@ -179,7 +179,43 @@ Imagine three friends—**Alice, Bob, and Charlie**—on a 3-day trip to Bali.
 
 ---
 
----
+## 🌊 Detailed App-Flow
+
+SplitBot's architecture seamlessly combines conversational AI with powerful decentralized cryptography. Here is a step-by-step breakdown of exactly how the application works under the hood.
+
+### 1. Telegram Interaction & AI Parsing (Telegraf & Gemini)
+- **User Input**: Users interact with the bot in a Telegram chat (e.g., "I paid $50 for dinner"). They can send text messages or voice notes.
+- **Backend Communication**: Our Node.js backend uses the `Telegraf` library to hook into the Telegram API. Telegraf constantly listens for new messages and commands. It bridges the gap between the Telegram servers and our local agent logic.
+- **AI Processing**: When an expense is reported, the raw text (or transcribed voice note) is forwarded to **Google Gemini 2.5 Flash**. We prompt Gemini to act as a financial parsing engine. It intelligently extracts the context and breaks the natural language down into a structured, predictable JSON object (e.g., `{"creditor": "Alice", "amount": 50, "description": "dinner"}`). 
+
+### 🤖 Telegram Commands Overview
+- `/start` - Boot up the bot and view the welcome guide.
+- `/register <wallet_address>` - Links your Telegram profile to your Celo wallet for USDC payouts and tracking.
+- `/history` - Asks Gemini to read the agent's decrypted memory and list all outstanding debts and balances.
+- `/settle` - Triggers the automated Lit + Zama + Celo settlement sequence to process on-chain payouts.
+
+### 2. State Management & Persistent Memory (Storacha & Lit Protocol)
+Because SplitBot is a decentralized agent, it cannot rely on a traditional centralized database to remember group debts.
+- **Encryption**: Every time a new expense is logged, the updated state (the list of all debts and users) is sent to a **Lit Protocol TEE (Trusted Execution Environment)**. A Lit Action (`Lit.Actions.Encrypt`) securely encrypts this JSON data using threshold cryptography.
+- **Decentralized Storage**: The beautifully encrypted ciphertext is then uploaded to **Storacha** (a hot storage network backed by Filecoin/IPFS). Storacha returns a Content Identifier (CID). 
+- **Decryption Engine**: When the bot reboots or crashes, it fetches the CID from Storacha and passes it back to Lit Protocol. Only the authorized SplitBot environment can request the `Lit.Actions.Decrypt` execution to restore the plain text into working memory.
+- **Why this matters**: This ensures the agent has perfect, persistent memory across restarts while maintaining absolute privacy. No one observing the IPFS network can read your group's financial data.
+
+### 3. Confidential On-Chain Accounting (Zama Protocol)
+While the agent remembers debts locally, we also need an algorithmic way to verify these balances on-chain without doxing users' spending habits to the public.
+- **Encrypted Ledgers**: When Gemini parses an expense, the bot immediately converts the amount into an encrypted `euint32` cipher using **Zama's fhEVM (Fully Homomorphic Encryption)** library.
+- **Privacy Preservation**: This encrypted data is pushed to the `ConfidentialSplitLedger` smart contract on Ethereum Sepolia. To the public, the balances look like random cryptographic hashes. Zama allows the blockchain to mathematically track who owes what *without ever seeing the plain text values*.
+
+### 4. The Settlement Execution (`/settle`)
+When the group is ready to finalize their trip, a user triggers the `/settle` command in Telegram. Here is the exact sequence of events:
+1. **Decryption Authorization**: The bot requests Zama's KMS (Key Management System) Relayer to decrypt the final homomorphic balances mathematically. Once verified, the exact plain-text debts are revealed securely to the agent.
+2. **Lit Protocol PKP Signature**: The agent formulates a settlement transaction for the `TripEscrow.sol` contract and sends it to the **Lit Action (`settleTrip.js`)**. 
+3. **Threshold Execution**: The Lit Nodes cooperatively construct a valid ECDSA signature using the agent's **Programmable Key Pair (PKP)**. The PKP (`0xe2...2c03`) essentially acts as the escrow's decentralized brain.
+4. **On-Chain Payout**: The signed transaction is broadcasted to the **Celo Sepolia Network**. The Escrow contract verifies that the command came exclusively from the Lit PKP, and releases the transparent USDC stablecoins directly into the creditor's wallet.
+
+### 5. Post-Settlement & Reputation
+- **Clearing the Slate**: After the Celo transaction is confirmed, the agent wipes the trip's local memory, resets the CIDs on Storacha, and informs the group via Telegram that the debts are cleared.
+- **ERC-8004 Reputation**: Finally, the agent logs positive "reputation points" on the Celo blockchain via the ERC-8004 feedback registry, building the users' decentralized credit scores for future dApps.
 
 ---
 

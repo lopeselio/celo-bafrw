@@ -2,6 +2,7 @@ import "@nomicfoundation/hardhat-ethers";
 import "@nomicfoundation/hardhat-chai-matchers";
 import "@fhevm/hardhat-plugin";
 import "@typechain/hardhat";
+import "@nomicfoundation/hardhat-verify";
 import type { HardhatUserConfig } from "hardhat/config";
 import * as dotenv from "dotenv";
 import * as path from "path";
@@ -44,6 +45,12 @@ const config: HardhatUserConfig = {
     outDir: "types",
     target: "ethers-v6",
   },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY || "",
+  },
+  sourcify: {
+    enabled: false
+  }
 };
 
 export default config;

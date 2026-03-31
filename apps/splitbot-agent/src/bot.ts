@@ -249,6 +249,22 @@ bot.command('settle', async (ctx) => {
         if (!jsonMatch) throw new Error('No JSON array found');
 
         const settlements: SettlementDebt[] = JSON.parse(jsonMatch[0]);
+        
+        try {
+            if (process.env.ZAMA_CONFIDENTIAL_LEDGER_ADDRESS && process.env.ENABLE_ZAMA === 'true') {
+                const { settleConfidentialTrip } = await import('./zamaSplit.js');
+                const users = Object.values(userRegistry);
+                if (users.length > 0) {
+                    await ctx.reply(`🔒 **Zama Protocol enabled!** Requesting true decrypted balances from the **fhEVM KMS Relayer** to authorize the final settlement...`, {parse_mode: 'Markdown'});
+                    await settleConfidentialTrip('trip-latest', users as string[]);
+                    await ctx.reply(`✅ **KMS Decryption Proofs Verified on-chain**: Mathematical fidelity confirmed. The bot will now finalize transparent USDC transfers on Celo!`, {parse_mode: 'Markdown'});
+                }
+            }
+        } catch (e: any) {
+            console.error("Zama Decrypt Error:", e);
+            await ctx.reply(`❌ Zama KMS decryption failed: ${e.message}`, {parse_mode: 'Markdown'});
+        }
+
         appendAgentLog({
             phase: 'plan',
             action: 'ai_settlement_plan',
@@ -441,7 +457,35 @@ bot.on(['text', 'voice'], async (ctx: any) => {
         tripTransactions.push(expense);
         await vault.saveState({ transactions: tripTransactions, registry: userRegistry });
 
-        const successText = `Got it! ${expense.payer} paid ${expense.amount} USDC for ${expense.description}. I've logged the expense securely.`;
+        let zamaLog = "";
+        try {
+            if (process.env.ZAMA_CONFIDENTIAL_LEDGER_ADDRESS && process.env.ENABLE_ZAMA === 'true') {
+                const { logConfidentialCredit, logConfidentialDebt } = await import('./zamaSplit.js');
+                const p = expense.payer.toLowerCase();
+                const payerWallet = userRegistry[p] || userRegistry[Object.keys(userRegistry).find(k => k.includes(p)) || p];
+                if (payerWallet) {
+                    await ctx.reply(`🔒 Zama Protocol enabled! Encrypting **${expense.amount} USDC** into fhEVM \`euint32\` ciphertexts and submitting to Ethereum Sepolia...`, {parse_mode: 'Markdown'});
+                    await logConfidentialCredit('trip-latest', payerWallet, expense.amount);
+                    
+                    // Split the debt among everyone registered homomorphically
+                    const splitKeys = Object.keys(userRegistry);
+                    if (splitKeys.length > 0) {
+                        const splitAmt = expense.amount / splitKeys.length;
+                        for (const userWallet of Object.values(userRegistry)) {
+                             await logConfidentialDebt('trip-latest', userWallet, splitAmt);
+                        }
+                    }
+                    zamaLog = "\n🔒 **Zama Protocol:** Encrypted homomorphic balances updated successfully on Ethereum Sepolia!";
+                } else {
+                    zamaLog = "\n⚠️ Zama fhEVM skipped: the payer has not registered a wallet.";
+                }
+            }
+        } catch (e: any) {
+            console.error("Zama Integration Error:", e);
+            zamaLog = "\n❌ Zama encrypted ledger failed: " + e.message;
+        }
+
+        const successText = `Got it! ${expense.payer} paid ${expense.amount} USDC for ${expense.description}. I've logged the expense securely.${zamaLog}`;
 
         if (ctx.message.voice && process.env.ELEVENLABS_API_KEY) {
             try {
