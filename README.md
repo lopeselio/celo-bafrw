@@ -90,7 +90,7 @@ The `TripEscrow.sol` contract manages group funds with integrated agent permissi
 | :--- | :--- | :--- |
 | **TripEscrow** | 🟢 Celo Sepolia | [`0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29`](https://sepolia.celoscan.io/address/0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29) |
 | **TripEscrow** | 🔵 Celo Mainnet | [`0xD43Bb3a001Ff360e28051d27363f8967E4a4C147`](https://celoscan.io/address/0xD43Bb3a001Ff360e28051d27363f8967E4a4C147) |
-| **Agent Identity** | 🆔 [AgentScan](https://agentscan.info/agent/3549) | **Official Agent ID #3549** (ERC-8004 Mainnet) |
+| **Agent Identity** | 🆔 [AgentScan](https://testnet.8004scan.io/agents/celo-sepolia/222) | **Official Agent ID #222** (ERC-8004 Mainnet) |
 
 ### 🆔 ERC-8004: Agent Trust & Reputation
 SplitBot follows the **ERC-8004** standard for decentralized AI agents. This protocol enables our agent to:
@@ -258,7 +258,7 @@ Located in `apps/splitbot-agent`.
 
 ---
 
-## Lit Chipotle (Base) vs Celo Sepolia (app chain)
+## Lit Protocol usage
 
 [Chipotle’s architecture](https://docs.dev.litprotocol.com/) shows **on-chain control-plane contracts on Base** (e.g. PKP registry, API key registry, groups). That is **where Lit registers PKPs, API keys, and action groups**—not where this app holds user funds.
 
@@ -267,14 +267,79 @@ Located in `apps/splitbot-agent`.
 | **Chipotle / Lit control plane** | **Base** (per Lit docs) | Register PKP, usage API key, groups, attach pinned Lit Action CIDs |
 | **SplitBot settlement** | **Celo Sepolia** (`11142220`) | `TripEscrow`, USDC, ERC-8004 |
 
-The Lit Action (`packages/agent-vault/src/lit-actions/settleTrip.js`) calls `Lit.Actions.signEthers` with **`chainId: 11142220`** so the threshold signature targets **Celo Sepolia**—consistent with `TripEscrow` on Celo. **You do not deploy Chipotle’s Base contracts yourself;** you use Lit’s hosted services and dashboard on Base while settling on Celo.
+The Lit Action (`packages/agent-vault/src/lit-actions/settleTrip.js`) calls `Lit.Actions.signEthers` with **`chainId: 11142220`** so the threshold signature targets **Celo Sepolia**—consistent with `TripEscrow` on Celo. **You do not deploy Chipotle’s Base contracts yourself;** we use Lit’s hosted services and dashboard on Base while settling on Celo.
 
-**Checklist**
+Lit protocol is finally integrated in our app with Celo Sepolia for two flows:
 
-1. In **Lit Dev / Chipotle**: create PKP, scoped **usage** API key (`LIT_CHIPOTLE_API_KEY`), group, and register the Lit Action CID (`LIT_SETTLEMENT_IPFS_CID`) as documented—this flow uses Lit’s **Base**-deployed registries.
-2. Ensure the PKP / policy allows signing for **Celo Sepolia** if your Lit dashboard has per-chain allowlists.
-3. **`LIT_NETWORK=naga-dev`** controls which **Lit validator network** the SDK connects to (TEE mesh)—separate from Base RPC or Celo RPC.
-4. If the SDK logs **`fetch failed`** to Lit validator URLs, that is **connectivity to Lit nodes** (VPN/firewall/status), not “Celo missing from Chipotle docs.”
+### 1. “Using the API directly” / Chipotle / dashboard — **yes, for settlements**
+
+Our app uses the same **Core v1 HTTP** pattern:
+
+- Base: `https://api.dev.litprotocol.com/core/v1` ([API docs](https://developer.litprotocol.com/management/api_direct))
+- **`POST /lit_action`** with **`X-Api-Key`** (usage key) — see `chipotleClient.ts` (`runLitAction`).
+
+That matches the flow: account → credits → **usage API key** → **PKP** → **groups / IPFS actions** (so the key can execute the action). The [dashboard](https://dashboard.dev.litprotocol.com/dapps/dashboard/) is exactly the UI for that setup ([Dashboard docs](https://developer.litprotocol.com/management/dashboard)).
+
+So for **signing / `settleTrip` via `lit_action`**, you are aligned with **Chipotle + dashboard + REST**, and also for encrypt decrypt.
+
+---
+
+### 2. Lit Actions SDK (`Lit.Actions.encrypt` / `decrypt`) — 
+
+- `Lit.Actions.encrypt({ pkpId, message })` / `Lit.Actions.decrypt(...)` — runs in the **action VM**, key material tied to the **PKP** ([Lit Actions SDK – Encryption](https://developer.litprotocol.com/lit-actions/sdk)).
+
+| Mechanism | Where it runs | Your status |
+|-----------|----------------|-------------|
+| **`POST /lit_action`** + `Lit.Actions.getPrivateKey` in `settleTrip.js` | Lit action runtime | **Working** (HTTPS only) |
+| **`Lit.Actions.encrypt` / `decrypt` in an action** | Inside a Lit Action | **Not implemented** in SplitBot for vault JSON |
+
+- **“Where are we using Lit actions to configure Chipotle and execute actions?”**  
+  **Yes** for **execute**: usage key → `lit_action` → your pinned/resolved `settleTrip` code + `js_params`. **Configure** = dashboard (or equivalent REST) for keys, PKP, groups, actions.
+
+
+---
+
+### Agent Operation Logs (Lit Actions in Action)
+
+The following logs demonstrate that the agent is successfully relying entirely on Lit Actions for settlements and encryption/decryption. The PKP is the updated agent of the escrow deployed on Celo Sepolia ([0x79cb34e300d37f3b65852338ac1f3a0c1ed6ca29](https://sepolia.celoscan.io/address/0x79cb34e300d37f3b65852338ac1f3a0c1ed6ca29)):
+
+```bash
+> splitbot-agent@1.0.0 start
+> tsx src/bot.ts
+
+[AgentVault] Initialized Persistent Memory for Agent: splitbot-hackathon-demo
+[Telegram] handler timeout 600s (long commands like /settle; set TELEGRAM_HANDLER_TIMEOUT_MS to override)
+[Gemini] model=gemini-2.5-flash (override with GEMINI_MODEL in .env)
+📦 [AgentVault] Storacha: client OK — uploads go here first; latest load uses Storacha when a matching memory blob exists, else Pinata.
+[Lit] Settlement: Core API POST /lit_action (LIT_CHIPOTLE_API_KEY)
+[Lit] PKP 0xe2141cc58975d604228FCD463a0761d392B72c03 → js_params.pkpId; TripEscrow.splitBotAgent must match this address (else settleExpense reverts).
+[Lit] Vault memory: Lit.Actions.Encrypt/Decrypt (Chipotle) via POST /lit_action (bundled vaultPkpCrypto.js or LIT_VAULT_CRYPTO_IPFS_CID).
+[Lit] LIT_SETTLEMENT_IPFS_CID=bafkreifccgmlse4…
+[Lit] Validator handshake unavailable — POST /lit_action settlement and Chipotle vault Encrypt/Decrypt still work; BLS encryptString/decryptToString need a connected node.
+📡 [AgentVault] Found persistent memory (Storacha) at CID: bafkreihonpcncuhk3u46uzlqrggnt3tdmev5qslnhxmyimabekxfweedzu
+📡 [Persistence] Recovered 4 transactions and 2 users from AgentVault.
+🔒 [Lit] Encrypting state (Lit Action: Lit.Actions.Encrypt, POST /lit_action)...
+🌐 [Storacha] State uploaded. CID: bafkreicboogj54dou4wgtqmggjaoqtfpviineno6dzumbuxiyserxm7rim
+✅ [User Registered] State Pinned: bafkreicboogj54dou4wgtqmggjaoqtfpviineno6dzumbuxiyserxm7rim
+🔒 [Lit] Encrypting state (Lit Action: Lit.Actions.Encrypt, POST /lit_action)...
+🌐 [Storacha] State uploaded. CID: bafkreibdpd5r6juvy2mxlji6trisbiuzonr322qkiz2gktybugd5jrvbse
+🔒 [Lit] Encrypting state (Lit Action: Lit.Actions.Encrypt, POST /lit_action)...
+🌐 [Storacha] State uploaded. CID: bafkreif3p3c5lbz7mtqydfrxfeyyyx57vmebdwqokguprkgp7hnvsfux4u
+🤖 [AI Settlement] Raw Response: 
+[
+  {
+    "debtor": "Elio | IntoTheVerse Games",
+    "creditor": "Franky",
+    "amount": 1.625
+  }
+]
+
+[agent_log] ai_settlement_plan 
+[agent_log] settleExpense_lit_action 0x5288415b4027c7e9dc209063690a14962d07e6bb553c539e779d13a3ae8a28e0
+🔒 [Lit] Encrypting state (Lit Action: Lit.Actions.Encrypt, POST /lit_action)...
+🌐 [Storacha] State uploaded. CID: bafkreiao2n4h6olmebt22rfdtisskpm63qrlup372ni26yq3vppjzkajdq
+[agent_log] reputation_giveFeedback 0xe8a8105c14985e83da46f31ada7c522d6095501ff25587032b98438465771126
+```
 
 ---
 
