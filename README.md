@@ -256,8 +256,6 @@ Located in `apps/splitbot-agent`.
 /settle
 ```
 
----
-
 ## Lit Protocol usage
 
 [Chipotle’s architecture](https://docs.dev.litprotocol.com/) shows **on-chain control-plane contracts on Base** (e.g. PKP registry, API key registry, groups). That is **where Lit registers PKPs, API keys, and action groups**—not where this app holds user funds.
