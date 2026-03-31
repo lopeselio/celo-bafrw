@@ -12,6 +12,8 @@ import {
   USDC_DECIMALS,
   getAgentAccount,
   getLitNetwork,
+  getLitPkpWalletAddress,
+  LIT_SETTLEMENT_IPFS_CID,
 } from '../src/config.js';
 
 const erc20Abi = parseAbi(['function balanceOf(address) view returns (uint256)']);
@@ -48,10 +50,32 @@ async function main() {
     functionName: 'totalPool',
   });
 
-  const match = splitBotAgent.toLowerCase() === agent.address.toLowerCase();
+  const lit = process.env.ENABLE_LIT === 'true' && !!LIT_SETTLEMENT_IPFS_CID;
+  const pkp = getLitPkpWalletAddress();
+  const match =
+    lit && pkp
+      ? splitBotAgent.toLowerCase() === pkp.toLowerCase()
+      : splitBotAgent.toLowerCase() === agent.address.toLowerCase();
   console.log('[escrow] TripEscrow:', ESCROW_ADDRESS);
   console.log('[escrow] splitBotAgent on-chain:', splitBotAgent);
-  console.log(match ? '[ok] Operator matches escrow splitBotAgent' : '[FAIL] Operator wallet != escrow splitBotAgent — settlement will revert');
+  if (lit && pkp) {
+    console.log('[escrow] Lit PKP (LIT_CHIPOTLE_PKP_ID / LIT_PKP_ID):', pkp);
+    console.log(
+      match
+        ? '[ok] splitBotAgent matches Lit PKP (required for lit_action settleExpense)'
+        : '[FAIL] splitBotAgent != Lit PKP — call TripEscrow.updateAgent(pkp) as owner',
+    );
+  } else {
+    console.log(
+      match
+        ? '[ok] Operator matches escrow splitBotAgent (wallet path)'
+        : '[FAIL] Operator wallet != escrow splitBotAgent — settlement will revert',
+    );
+  }
+  if (lit && !pkp) {
+    console.log('[FAIL] ENABLE_LIT + LIT_SETTLEMENT_IPFS_CID but LIT_CHIPOTLE_PKP_ID is not a valid 0x address');
+    process.exit(1);
+  }
 
   console.log('[escrow] totalPool USDC:', formatUnits(pool, USDC_DECIMALS));
 
@@ -66,10 +90,9 @@ async function main() {
   const celoBal = await client.getBalance({ address: agent.address });
   console.log('[agent] CELO balance (wei):', celoBal.toString());
 
-  const lit = process.env.ENABLE_LIT === 'true' && process.env.LIT_SETTLEMENT_IPFS_CID;
   console.log('[config] SETTLEMENT_MODE:', process.env.SETTLEMENT_MODE || '(default escrow)');
   console.log('[config] LIT_NETWORK:', getLitNetwork());
-  console.log('[config] Escrow path uses Lit:', Boolean(lit));
+  console.log('[config] Escrow path uses Lit:', lit);
 
   if (!match) process.exit(1);
 }
