@@ -90,7 +90,7 @@ The `TripEscrow.sol` contract manages group funds with integrated agent permissi
 | :--- | :--- | :--- |
 | **TripEscrow** | 🟢 Celo Sepolia | [`0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29`](https://sepolia.celoscan.io/address/0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29) |
 | **TripEscrow** | 🔵 Celo Mainnet | [`0xD43Bb3a001Ff360e28051d27363f8967E4a4C147`](https://celoscan.io/address/0xD43Bb3a001Ff360e28051d27363f8967E4a4C147) |
-| **Agent Identity** | 🆔 [AgentScan](https://agentscan.info/agent/3549) | **Official Agent ID #3549** (ERC-8004 Mainnet) |
+| **Agent Identity** | 🆔 [AgentScan](https://testnet.8004scan.io/agents/celo-sepolia/222) | **Official Agent ID #222** (ERC-8004 Mainnet) |
 
 ### 🆔 ERC-8004: Agent Trust & Reputation
 SplitBot follows the **ERC-8004** standard for decentralized AI agents. This protocol enables our agent to:

@@ -10,9 +10,11 @@
     "dev": "tsx watch src/bot.ts | tee bot.log",
     "dev:no-lit": "ENABLE_LIT=false tsx watch src/bot.ts | tee bot.log",
     "smoke:celo": "tsx scripts/celo-smoke.ts",
+    "escrow:update-agent": "tsx scripts/update-escrow-agent.ts",
     "fund:escrow": "tsx scripts/fund-escrow.ts",
     "telegram:profile": "tsx scripts/configure-telegram-bot-profile.ts",
     "storacha:ping": "tsx scripts/storacha-migrate-memory.ts",
+    "lit:smoke": "tsx scripts/lit-smoke.ts",
     "kill:local-bot": "pkill -f 'celo/apps/splitbot-agent/src/bot.ts' 2>/dev/null || pkill -f 'splitbot-agent/src/bot.ts' 2>/dev/null || true; echo 'Done. If 409 persists, stop cloud deploys or other machines using the same TELEGRAM_BOT_TOKEN.'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
