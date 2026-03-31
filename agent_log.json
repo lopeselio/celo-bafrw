@@ -96,6 +96,56 @@
       "chainTx": "0xe8a8105c14985e83da46f31ada7c522d6095501ff25587032b98438465771126",
       "explorerUrl": "https://sepolia.celoscan.io/tx/0xe8a8105c14985e83da46f31ada7c522d6095501ff25587032b98438465771126",
       "ts": "2026-03-31T04:51:43.291Z"
+    },
+    {
+      "phase": "plan",
+      "action": "ai_settlement_plan",
+      "detail": "[{\"debtor\":\"Elio | IntoTheVerse Games\",\"creditor\":\"Franky\",\"amount\":0.8125}]",
+      "chainTx": null,
+      "ts": "2026-03-31T11:21:41.454Z"
+    },
+    {
+      "phase": "plan",
+      "action": "ai_settlement_plan",
+      "detail": "[{\"debtor\":\"Elio | IntoTheVerse Games\",\"creditor\":\"Franky\",\"amount\":0.8125}]",
+      "chainTx": null,
+      "ts": "2026-03-31T11:28:02.587Z"
+    },
+    {
+      "phase": "plan",
+      "action": "ai_settlement_plan",
+      "detail": "[{\"debtor\":\"Elio | IntoTheVerse Games\",\"creditor\":\"Franky\",\"amount\":0.8125}]",
+      "chainTx": null,
+      "ts": "2026-03-31T11:30:40.980Z"
+    },
+    {
+      "phase": "plan",
+      "action": "ai_settlement_plan",
+      "detail": "[{\"debtor\":\"Elio | IntoTheVerse Games\",\"creditor\":\"Franky\",\"amount\":0.81}]",
+      "chainTx": null,
+      "ts": "2026-03-31T11:34:02.172Z"
+    },
+    {
+      "phase": "plan",
+      "action": "ai_settlement_plan",
+      "detail": "[{\"debtor\":\"Elio | IntoTheVerse Games\",\"creditor\":\"Franky\",\"amount\":0.8125}]",
+      "chainTx": null,
+      "ts": "2026-03-31T11:45:04.744Z"
+    },
+    {
+      "phase": "execute",
+      "action": "settleExpense_lit_action",
+      "detail": "{\"debtor\":\"Elio | IntoTheVerse Games\",\"creditor\":\"Franky\",\"amount\":0.8125}",
+      "chainTx": "0xc88dbbe9c439e6abf8a52a2a74b6b9ca276444ef8b95c1b9856b3f3c69a1684d",
+      "ts": "2026-03-31T11:45:15.740Z"
+    },
+    {
+      "phase": "execute",
+      "action": "reputation_giveFeedback",
+      "detail": "agentId=222",
+      "chainTx": "0x4737429911a47550ca3a9c72d04dca9a076f376eed1a20f2dceeca38fc1b91fd",
+      "explorerUrl": "https://sepolia.celoscan.io/tx/0x4737429911a47550ca3a9c72d04dca9a076f376eed1a20f2dceeca38fc1b91fd",
+      "ts": "2026-03-31T11:45:34.486Z"
     }
   ],
   "instructions": "Append one object per material onchain action: register, giveFeedback, validationRequest, validationResponse, settleExpense, etc. Include tx hash and explorer URL."
