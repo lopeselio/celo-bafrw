@@ -34,6 +34,52 @@ graph TD
     B -.->|If Default| S[Slashing Protocol]
 ```
 
+### Target architecture (multi-track)
+
+This is the **end-state wiring** for PL Genesis–style submissions: trustless Celo escrow, ERC-8004 registries, Lit (or PKP/Vincent) for signing, IPFS/Pinata plus Filecoin-backed archives, Zama fhEVM for confidential financial state, and libp2p for agent mesh coordination.
+
+```mermaid
+flowchart LR
+  subgraph users [Humans]
+    TG[Telegram]
+  end
+  subgraph agent [SplitBot]
+    Plan[PlanParse]
+    Verify[VerifyRegistryBalances]
+    Exec[ExecuteSettlement]
+  end
+  subgraph celo [Celo]
+    Esc[TripEscrow]
+    R8004[ERC8004_Registries]
+  end
+  subgraph lit [LitOrVincent]
+    Enc[EncryptDecrypt]
+    LA[LitActionOrPKP]
+  end
+  subgraph storage [Storage]
+    IPFS[IPFS_Pinata]
+    FC[Filecoin_Archive]
+  end
+  subgraph zama [Zama_fhEVM]
+    FHE[Confidential_State]
+  end
+  subgraph p2p [P2P]
+    L2[libp2p_Mesh]
+  end
+  TG --> Plan
+  Plan --> Verify
+  Verify --> R8004
+  Verify --> Esc
+  Plan --> Enc
+  Enc --> IPFS
+  Exec --> LA
+  LA --> Esc
+  agent --> L2
+  L2 --> IPFS
+  IPFS --> FC
+  Plan --> FHE
+```
+
 ---
 
 ## 📜 Smart Contracts
@@ -44,7 +90,7 @@ The `TripEscrow.sol` contract manages group funds with integrated agent permissi
 | :--- | :--- | :--- |
 | **TripEscrow** | 🟢 Celo Sepolia | [`0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29`](https://sepolia.celoscan.io/address/0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29) |
 | **TripEscrow** | 🔵 Celo Mainnet | [`0xD43Bb3a001Ff360e28051d27363f8967E4a4C147`](https://celoscan.io/address/0xD43Bb3a001Ff360e28051d27363f8967E4a4C147) |
-| **Agent Identity** | 🆔 [AgentScan](https://agentscan.info/agent/3549) | **Official Agent ID #3549** (ERC-8004 Mainnet) |
+| **Agent Identity** | 🆔 [AgentScan](https://testnet.8004scan.io/agents/celo-sepolia/222) | **Official Agent ID #222** (ERC-8004 Mainnet) |
 
 ### 🆔 ERC-8004: Agent Trust & Reputation
 SplitBot follows the **ERC-8004** standard for decentralized AI agents. This protocol enables our agent to:
@@ -210,16 +256,132 @@ Located in `apps/splitbot-agent`.
 /settle
 ```
 
+## Lit Protocol usage
+
+[Chipotle’s architecture](https://docs.dev.litprotocol.com/) shows **on-chain control-plane contracts on Base** (e.g. PKP registry, API key registry, groups). That is **where Lit registers PKPs, API keys, and action groups**—not where this app holds user funds.
+
+| Layer | Chain | Role |
+| ----- | ----- | ---- |
+| **Chipotle / Lit control plane** | **Base** (per Lit docs) | Register PKP, usage API key, groups, attach pinned Lit Action CIDs |
+| **SplitBot settlement** | **Celo Sepolia** (`11142220`) | `TripEscrow`, USDC, ERC-8004 |
+
+The Lit Action (`packages/agent-vault/src/lit-actions/settleTrip.js`) calls `Lit.Actions.signEthers` with **`chainId: 11142220`** so the threshold signature targets **Celo Sepolia**—consistent with `TripEscrow` on Celo. **You do not deploy Chipotle’s Base contracts yourself;** we use Lit’s hosted services and dashboard on Base while settling on Celo.
+
+Lit protocol is finally integrated in our app with Celo Sepolia for two flows:
+
+### 1. “Using the API directly” / Chipotle / dashboard — **yes, for settlements**
+
+Our app uses the same **Core v1 HTTP** pattern:
+
+- Base: `https://api.dev.litprotocol.com/core/v1` ([API docs](https://developer.litprotocol.com/management/api_direct))
+- **`POST /lit_action`** with **`X-Api-Key`** (usage key) — see `chipotleClient.ts` (`runLitAction`).
+
+That matches the flow: account → credits → **usage API key** → **PKP** → **groups / IPFS actions** (so the key can execute the action). The [dashboard](https://dashboard.dev.litprotocol.com/dapps/dashboard/) is exactly the UI for that setup ([Dashboard docs](https://developer.litprotocol.com/management/dashboard)).
+
+So for **signing / `settleTrip` via `lit_action`**, you are aligned with **Chipotle + dashboard + REST**, and also for encrypt decrypt.
+
 ---
 
-### IPFS Pinata persistent storage for AI agents 
-JSON Blobs pinned to Pinnata with proper CDN set up
+### 2. Lit Actions SDK (`Lit.Actions.encrypt` / `decrypt`) — 
+
+- `Lit.Actions.encrypt({ pkpId, message })` / `Lit.Actions.decrypt(...)` — runs in the **action VM**, key material tied to the **PKP** ([Lit Actions SDK – Encryption](https://developer.litprotocol.com/lit-actions/sdk)).
+
+| Mechanism | Where it runs | Your status |
+|-----------|----------------|-------------|
+| **`POST /lit_action`** + `Lit.Actions.getPrivateKey` in `settleTrip.js` | Lit action runtime | **Working** (HTTPS only) |
+| **`Lit.Actions.encrypt` / `decrypt` in an action** | Inside a Lit Action | **Not implemented** in SplitBot for vault JSON |
+
+- **“Where are we using Lit actions to configure Chipotle and execute actions?”**  
+  **Yes** for **execute**: usage key → `lit_action` → your pinned/resolved `settleTrip` code + `js_params`. **Configure** = dashboard (or equivalent REST) for keys, PKP, groups, actions.
+
+
+---
+
+### Agent Operation Logs (Lit Actions in Action)
+
+The following logs demonstrate that the agent is successfully relying entirely on Lit Actions for settlements and encryption/decryption. The PKP is the updated agent of the escrow deployed on Celo Sepolia ([0x79cb34e300d37f3b65852338ac1f3a0c1ed6ca29](https://sepolia.celoscan.io/address/0x79cb34e300d37f3b65852338ac1f3a0c1ed6ca29)):
+
+```bash
+> splitbot-agent@1.0.0 start
+> tsx src/bot.ts
+
+[AgentVault] Initialized Persistent Memory for Agent: splitbot-hackathon-demo
+[Telegram] handler timeout 600s (long commands like /settle; set TELEGRAM_HANDLER_TIMEOUT_MS to override)
+[Gemini] model=gemini-2.5-flash (override with GEMINI_MODEL in .env)
+📦 [AgentVault] Storacha: client OK — uploads go here first; latest load uses Storacha when a matching memory blob exists, else Pinata.
+[Lit] Settlement: Core API POST /lit_action (LIT_CHIPOTLE_API_KEY)
+[Lit] PKP 0xe2141cc58975d604228FCD463a0761d392B72c03 → js_params.pkpId; TripEscrow.splitBotAgent must match this address (else settleExpense reverts).
+[Lit] Vault memory: Lit.Actions.Encrypt/Decrypt (Chipotle) via POST /lit_action (bundled vaultPkpCrypto.js or LIT_VAULT_CRYPTO_IPFS_CID).
+[Lit] LIT_SETTLEMENT_IPFS_CID=bafkreifccgmlse4…
+[Lit] Validator handshake unavailable — POST /lit_action settlement and Chipotle vault Encrypt/Decrypt still work; BLS encryptString/decryptToString need a connected node.
+📡 [AgentVault] Found persistent memory (Storacha) at CID: bafkreihonpcncuhk3u46uzlqrggnt3tdmev5qslnhxmyimabekxfweedzu
+📡 [Persistence] Recovered 4 transactions and 2 users from AgentVault.
+🔒 [Lit] Encrypting state (Lit Action: Lit.Actions.Encrypt, POST /lit_action)...
+🌐 [Storacha] State uploaded. CID: bafkreicboogj54dou4wgtqmggjaoqtfpviineno6dzumbuxiyserxm7rim
+✅ [User Registered] State Pinned: bafkreicboogj54dou4wgtqmggjaoqtfpviineno6dzumbuxiyserxm7rim
+🔒 [Lit] Encrypting state (Lit Action: Lit.Actions.Encrypt, POST /lit_action)...
+🌐 [Storacha] State uploaded. CID: bafkreibdpd5r6juvy2mxlji6trisbiuzonr322qkiz2gktybugd5jrvbse
+🔒 [Lit] Encrypting state (Lit Action: Lit.Actions.Encrypt, POST /lit_action)...
+🌐 [Storacha] State uploaded. CID: bafkreif3p3c5lbz7mtqydfrxfeyyyx57vmebdwqokguprkgp7hnvsfux4u
+🤖 [AI Settlement] Raw Response: 
+[
+  {
+    "debtor": "Elio | IntoTheVerse Games",
+    "creditor": "Franky",
+    "amount": 1.625
+  }
+]
+
+[agent_log] ai_settlement_plan 
+[agent_log] settleExpense_lit_action 0x5288415b4027c7e9dc209063690a14962d07e6bb553c539e779d13a3ae8a28e0
+🔒 [Lit] Encrypting state (Lit Action: Lit.Actions.Encrypt, POST /lit_action)...
+🌐 [Storacha] State uploaded. CID: bafkreiao2n4h6olmebt22rfdtisskpm63qrlup372ni26yq3vppjzkajdq
+[agent_log] reputation_giveFeedback 0xe8a8105c14985e83da46f31ada7c522d6095501ff25587032b98438465771126
+```
+
+---
+
+## 💾 Decentralized Storage (Storacha & Pinata)
+
+In SplitBot, **Storacha** (the hot storage layer on top of Filecoin/IPFS) works hand-in-hand with Lit Protocol to form the **AgentVault** persistent memory flow:
+
+1. **State Encryption**: When the agent modifies its memory (new debts, group updates), the state JSON is sent to the Lit Action (`Lit.Actions.Encrypt`) and encrypted.
+2. **IPFS Upload**: The encrypted ciphertext is then uploaded to the decentralized web using the **Storacha Network**, yielding a persistent Content Identifier (CID).
+3. **Decentralized Retrieval**: When the agent boots, it resolves its latest CID, fetches the blob from Storacha, and uses Lit Protocol to decrypt it back into working memory.
+
+**Why Storacha?**
+- **Verifiable Proof**: The data is reliably archived.
+- **Portability**: Agent #222's memory is not locked into a central database. By combining Lit decryption policies and IPFS CIDs, the agent can be booted up by any permissioned node in the true spirit of decentralized AI. 
+
+*AgentVault seamlessly falls back to Pinata for maximum redundancy.*
+
+### IPFS Pinata persistent storage for AI agents
+JSON Blobs pinned to Pinnata with proper CDN set up:
 <img width="1233" height="689" alt="image" src="https://github.com/user-attachments/assets/2fef6cd1-1bc7-448e-9276-e751676a2cdb" />
 
 <img width="870" height="778" alt="image" src="https://github.com/user-attachments/assets/7d65a350-adbd-4e0e-b5c7-af74124be160" />
 
+---
+
+## PL Genesis / DevSpot: bounties and onchain matrix
+
+| Track | Fit | Proof in repo |
+| ----- | --- | ------------- |
+| Protocol Labs — Crypto | Group split + programmable escrow | `TripEscrow.sol`, `/settle` with `SETTLEMENT_MODE=escrow` |
+| Protocol Labs — AI & Robotics | Autonomous plan → verify → execute | `apps/splitbot-agent/src/bot.ts`, `settlement.ts` |
+| Protocol Labs — Infrastructure | Encrypted vault, P2P gossip, portable agent data | `AgentVault.ts`, `agentMesh.ts` |
+| Ethereum Foundation — ERC-8004 | Identity + reputation + validation registries | `erc8004.ts`, `scripts/register-8004.ts`, `agent.json`, `agent_log.json` |
+| Lit Protocol — NextGen AI | Lit v8 (Naga-family) encrypt/decrypt + Lit Actions | `AgentVault.ts`, `ENABLE_LIT`, `LIT_SETTLEMENT_IPFS_CID` |
+| Zama — Confidential finance | fhEVM roadmap + commitment demo | `packages/zama-split/` |
+| Filecoin — Fee-gated agent comms | Optional Storacha (Filecoin-backed) archive + `CommsStake.sol` | `filecoinArchive.ts`, `packages/contracts/src/CommsStake.sol` |
+
+**Explorer (Celo Sepolia):** [TripEscrow](https://sepolia.celoscan.io/address/0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29) · [Identity 8004](https://sepolia.celoscan.io/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) · [Reputation 8004](https://sepolia.celoscan.io/address/0x8004B663056A597Dffe9eCcC1965A193B7388713)
+
+**Env matrix (see `apps/splitbot-agent/.env.example`):** `SETTLEMENT_MODE` (`minipay` \| `escrow`), `ENABLE_LIT`, `ENABLE_PAYMENTS`, `ERC8004_AGENT_ID`, `FEEDBACK_WALLET_PRIVATE_KEY` (must differ from agent for `giveFeedback`), `VALIDATION_REGISTRY_ADDRESS`, `VALIDATOR_ADDRESS`, `ENABLE_MESH`, `STORACHA_AGENT_KEY`, `STORACHA_PROOF` (optional Filecoin archive via [Storacha](https://docs.storacha.network/)).
+
+---
 
 ## 📖 Deployment Details
 - **Deployer**: `0xaAf16AD8a1258A98ed77A5129dc6A8813924Ad3C`
 - **Framework**: Foundry (Contracts) + TypeScript (Agent).
-- **Active Node**: Running on Celo Sepolia and Datil-Dev (Lit).
+- **Active Node**: Celo Sepolia (contracts); Lit **naga-dev** validators + Chipotle control plane on **Base** per Lit docs (PKP/API key/group registration—not TripEscrow).

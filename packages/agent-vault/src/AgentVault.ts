@@ -9,6 +9,16 @@ import { transfer } from "thirdweb/extensions/erc20";
 import { privateKeyToAccount } from "thirdweb/wallets";
 import { defineChain } from "thirdweb";
 
+function litNetworkFromEnv(): 'naga-dev' | 'custom' {
+    const raw = (process.env.LIT_NETWORK || 'naga-dev').trim().toLowerCase();
+    if (raw === 'datil-dev' || raw === 'datil') {
+        console.warn('[Lit] LIT_NETWORK datil-dev is deprecated in v8; using naga-dev.');
+        return 'naga-dev';
+    }
+    if (raw === 'custom') return 'custom';
+    return 'naga-dev';
+}
+
 /**
  * AgentVault Core SDK
  * 
@@ -29,8 +39,9 @@ export class AgentVault {
     private usePayments: boolean;
     private twebClient: any;
     private agentAccount: any;
-    private vaultDepositAddress = "0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29"; // Updated TripEscrow (Slashing v2)
-    private usdcTokenAddress = "0x01C5C0122039549AD1493B8220cABEdD739BC44E"; // Celo Sepolia USDC
+    private vaultDepositAddress = process.env.ESCROW_ADDRESS || "0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29";
+    private usdcTokenAddress = process.env.USDC_ADDRESS || "0x01C5C0122039549AD1493B8220cABEdD739BC44E";
+    private escrowAddress = process.env.ESCROW_ADDRESS || "0x79cB34E300D37f3B65852338Ac1f3a0C1ED6Ca29";
 
     private litNodeClient: any;
     private sessionSigs: any;
@@ -68,9 +79,10 @@ export class AgentVault {
 
         // Setup Lit Protocol
         if (this.useRealLit) {
-            console.log(`[Lit Protocol] Connecting to 'datil-dev' Lit network...`);
+            const litNetwork = litNetworkFromEnv();
+            console.log(`[Lit Protocol] Connecting to '${litNetwork}'...`);
             this.litNodeClient = new LitJsSdk.LitNodeClientNodeJs({
-                litNetwork: "datil-dev" as any, // Cast to any if types lag behind Naga releases
+                litNetwork,
                 debug: false
             });
             await this.litNodeClient.connect();
@@ -91,7 +103,7 @@ export class AgentVault {
         
         this.sessionSigs = await this.litNodeClient.getPkpSessionSigs({
             chain: "celo",
-            publicKey: "0xPlaceholderPKPPublicKey", // We will update this when a PKP is minted
+            publicKey: process.env.PKP_PUBLIC_KEY || "0x",
             authMethods: [
                 {
                     authMethodType: 1, // EthWallet
@@ -191,15 +203,22 @@ export class AgentVault {
         }
     }
 
+    /** Decryption allowed only when `:userAddress` matches on-chain `TripEscrow.splitBotAgent()`. */
     private getCeloAccessControlCondition() {
         return [{
-            contractAddress: '',
-            standardContractType: '',
+            contractAddress: this.escrowAddress,
             chain: 'celo',
-            method: '',
-            parameters: [':userAddress'],
-            returnValueTest: { comparator: '=', value: this.agentId }
+            standardContractType: 'Contract',
+            method: 'splitBotAgent',
+            parameters: [],
+            returnValueTest: { comparator: '=', value: ':userAddress' }
         }];
+    }
+
+    getOperatorAddress(): string {
+        const pk = process.env.AGENT_WALLET_PRIVATE_KEY;
+        if (!pk) throw new Error('AGENT_WALLET_PRIVATE_KEY required');
+        return new ethers.Wallet(pk).address;
     }
   
     /**

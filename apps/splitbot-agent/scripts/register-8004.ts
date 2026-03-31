@@ -22,7 +22,9 @@ async function registerAgent() {
     ];
 
     const registry = new ethers.Contract(IDENTITY_REGISTRY_ADDRESS, ABI, wallet);
-    const agentMetadataURI = "ipfs://QmSplitBotGenAIIdentityDefinition001";
+    /** Pinned via `npx tsx scripts/pin-agent-registration.ts` (root agent.json + logo). */
+    const agentMetadataURI =
+        process.env.AGENT_REGISTRATION_URI || 'ipfs://QmSqzFzem9qihPgGBxp1ZytiC57ptvakvtsFPyo7mzg46S';
 
     try {
         console.log(`\n⏳ Minting ERC-721 Agent Identity via Native Transport...`);
