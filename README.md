@@ -1,4 +1,4 @@
-# 🌟 Celo Hackathon: AgentVault + SplitBot
+# AgentVault + SplitBot
 
 ### [ Winning Material ] - The Full Agentic Stack for Celo
 This project doesn't just build a bot; it implements the **complete decentralized agent infrastructure** required for the next generation of on-chain economy.
