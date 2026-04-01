@@ -273,13 +273,16 @@ SplitBot doesn't just log numbers; it builds a **Verifiable Reputation Score** f
 
 | Layer | Technology | Purpose |
 | :--- | :--- | :--- |
-| **Privacy** | **Lit Protocol (TEE)** | Encrypts the Agent's state (Transactions/Registry) using Threshold Cryptography. Only the Agent's logic can see the plain text. |
-| **Storage** | **Pinata / IPFS** | Provides a decentralized, immutable home for the encrypted memory. |
-| **Economic Barrier** | **Thirdweb x402** | Implements a tiny micropayment (USDC) for every "Memory Save" to prevent spam and fund the Agent's operations. |
-| **AI Processing** | **Gemini 1.5 Flash** | Interrogates the recovered memory to provide conversational responses and dynamic balance tracking. |
+| **Storage** | **Storacha / IPFS** | Provides a decentralized, Filecoin-backed immutable home for the encrypted memory. |
+| **Privacy (State)** | **Lit Protocol (TEE)** | Encrypts the Agent's state using Threshold Cryptography. Only the Agent's logic can see the plain text. |
+| **Confidential Ledger** | **Zama Protocol (fhEVM)** | Keeps the balances homomorphically encrypted on-chain, ensuring public settlement without doxing amounts. |
+| **Agent Mesh** | **libp2p** | Facilitates decentralized P2P gossiping of state updates and CIDs between agent nodes. |
+| **Economic Barrier** | **Thirdweb x402** | Implements a tiny micropayment (USDC) for every "Memory Save" to prevent spam and fund operations. |
+| **AI Processing** | **Gemini 2.5 Flash** | Interrogates and parses audio/text inputs into structured outputs for the encrypted memory and settlement. |
+| **Settlement** | **Celo (TripEscrow.sol)** | Blazing fast execution of real-world USDC payouts via the Agent's signature and execution matrix. |
 
 **The Workflow**: 
-1. `Bot Saves State` $\rightarrow$ 2. `Lit Action Encrypts String` $\rightarrow$ 3. `Thirdweb x402 Micropayment` $\rightarrow$ 4. `Pinata Pins JSON` $\rightarrow$ 5. `CID Returned`.
+1. `Bot Parses State via Gemini AI` $\rightarrow$ 2. `Zama Updates Encrypted Ledger` $\rightarrow$ 3. `Lit Action Encrypts Memory` $\rightarrow$ 4. `Thirdweb Micropayment Executed` $\rightarrow$ 5. `Storacha Pins JSON to Filecoin` $\rightarrow$ 6. `CID Gossiped via libp2p`.
 
 ---
 
