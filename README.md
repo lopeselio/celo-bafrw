@@ -1,3 +1,20 @@
+<p align="center">
+  <img src="assets/splitbot-logo.png" width="250" alt="SplitBot Logo" />
+</p>
+
+<p align="center">
+  <b>Submitted to</b><br>
+  <a href="https://pl-genesis-frontiers-of-collaboration-hackathon.devspot.app/">
+    <img src="assets/pl-genesis.png" width="150" alt="PL Genesis Hackathon" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://youtu.be/idJJllVHheA?si=cO2Wi4qa25qJI0Ko">
+    <img src="assets/video-demo.png" width="600" alt="SplitBot Demo Video" />
+  </a>
+</p>
+
 # AgentVault + SplitBot
 
 ### 🎙️ The Autonomous Bill-Splitting Agent on Steroids

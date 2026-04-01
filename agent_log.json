@@ -146,6 +146,28 @@
       "chainTx": "0x4737429911a47550ca3a9c72d04dca9a076f376eed1a20f2dceeca38fc1b91fd",
       "explorerUrl": "https://sepolia.celoscan.io/tx/0x4737429911a47550ca3a9c72d04dca9a076f376eed1a20f2dceeca38fc1b91fd",
       "ts": "2026-03-31T11:45:34.486Z"
+    },
+    {
+      "phase": "plan",
+      "action": "ai_settlement_plan",
+      "detail": "[{\"debtor\":\"Elio | IntoTheVerse Games\",\"creditor\":\"Franky\",\"amount\":1.40625}]",
+      "chainTx": null,
+      "ts": "2026-03-31T22:17:50.924Z"
+    },
+    {
+      "phase": "execute",
+      "action": "settleExpense_lit_action",
+      "detail": "{\"debtor\":\"Elio | IntoTheVerse Games\",\"creditor\":\"Franky\",\"amount\":1.40625}",
+      "chainTx": "0x1a5c3a4f6c097fba5602320818691c0851c7318346aa5382a1f6a37aa66366d1",
+      "ts": "2026-03-31T22:18:01.844Z"
+    },
+    {
+      "phase": "execute",
+      "action": "reputation_giveFeedback",
+      "detail": "agentId=222",
+      "chainTx": "0xb1a262c5e0fc9834eef86c3819109f29c015bfe785a5d4b28ad7dc7a63d06f56",
+      "explorerUrl": "https://sepolia.celoscan.io/tx/0xb1a262c5e0fc9834eef86c3819109f29c015bfe785a5d4b28ad7dc7a63d06f56",
+      "ts": "2026-03-31T22:18:20.968Z"
     }
   ],
   "instructions": "Append one object per material onchain action: register, giveFeedback, validationRequest, validationResponse, settleExpense, etc. Include tx hash and explorer URL."
